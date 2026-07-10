@@ -1,10 +1,10 @@
 :root {
-  --bg: #f4f2ea;
-  --ink: #1e1b18;
-  --card: #fffdf8;
-  --accent: #005f73;
-  --accent-soft: #94d2bd;
-  --line: #c9c3b5;
+  --bg: #f2eadf;
+  --ink: #1f242a;
+  --card: #fffaf3;
+  --accent: #0f3a5c;
+  --accent-soft: #d9a441;
+  --line: #cbbda7;
 }
 
 * {
@@ -16,8 +16,8 @@ body {
   font-family: "Space Grotesk", sans-serif;
   color: var(--ink);
   background:
-    radial-gradient(circle at 85% 0%, #e9d8a6 0, transparent 35%),
-    radial-gradient(circle at 10% 20%, #94d2bd 0, transparent 28%),
+    radial-gradient(circle at 84% 6%, #dfc9a1 0, transparent 30%),
+    radial-gradient(circle at 10% 18%, #94b6cf 0, transparent 32%),
     var(--bg);
 }
 
@@ -55,8 +55,8 @@ body {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--card);
-  padding: 1rem;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
+  padding: 1.1rem;
+  box-shadow: 0 12px 26px rgba(42, 34, 24, 0.12);
   animation: up 0.35s ease-out;
 }
 
@@ -127,15 +127,17 @@ button,
   font-family: "Space Grotesk", sans-serif;
   text-decoration: none;
   width: fit-content;
+  transition: filter 0.16s ease, transform 0.16s ease;
 }
 
 button:hover,
 .btn-link:hover {
   filter: brightness(1.08);
+  transform: translateY(-1px);
 }
 
 .cta {
-  background: #ca6702;
+  background: #c06b1f;
 }
 
 .grid-3 {
@@ -206,6 +208,7 @@ button:hover,
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 12px;
+  background: #fffcf7;
 }
 
 table {
@@ -225,7 +228,8 @@ td {
 th {
   position: sticky;
   top: 0;
-  background: #faf8f1;
+  background: #f3ebdf;
+  z-index: 1;
 }
 
 .status,
@@ -239,6 +243,10 @@ th {
   display: grid;
   gap: 0.5rem;
   grid-template-columns: 1fr auto auto;
+}
+
+.row-actions {
+  margin-top: 0.7rem;
 }
 
 .product-list {
@@ -279,11 +287,23 @@ th {
 }
 
 @media (max-width: 900px) {
+  .app-shell {
+    width: min(100%, 94vw);
+    margin: 1.3rem auto 2rem;
+  }
+
+  .hero h1 {
+    max-width: 100%;
+  }
+
   .two-col,
   .grid-3,
-  .grid-4,
   .kpi-grid {
     grid-template-columns: 1fr;
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .store-row,
@@ -291,5 +311,31 @@ th {
   .summary-row,
   .share-box {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 0.85rem;
+  }
+
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-grid strong {
+    font-size: 1.2rem;
+  }
+
+  th,
+  td {
+    padding: 0.5rem;
+    font-size: 0.82rem;
+  }
+
+  button,
+  .btn-link {
+    width: 100%;
+    justify-content: center;
   }
 }

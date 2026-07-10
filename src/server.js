@@ -544,51 +544,132 @@ app.get("/api/reports/:slug/pdf", (req, res) => {
 
     const summary = summarizeSales(report.filters);
 
+    const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
+    const metaDate = new Date().toLocaleString("es-AR");
+
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename=report-${slug}.pdf`);
 
-    const doc = new PDFDocument({ margin: 46 });
+    const doc = new PDFDocument({ margin: 42, size: "A4" });
     doc.pipe(res);
 
-    doc.rect(0, 0, doc.page.width, 92).fill("#005f73");
-    doc.fillColor("#ffffff").fontSize(20).text(report.name, 46, 30);
-    doc.fontSize(10).text(`Store: ${report.filters.storeId || "N/A"}`, 46, 58);
-    doc.fontSize(10).text(`Generado: ${new Date().toLocaleString()}`, 230, 58);
-    doc.fillColor("#1e1b18");
-    doc.moveDown(3.4);
+    const pageW = doc.page.width;
+    const pageH = doc.page.height;
+    const x = 42;
+    const contentW = pageW - x * 2;
 
-    doc.fontSize(14).text("Resumen general");
-    doc.moveDown(0.5);
-    const y0 = doc.y;
+    doc.rect(0, 0, pageW, pageH).fill("#F3EFE7");
 
-    doc.roundedRect(46, y0, 160, 58, 8).stroke("#c9c3b5");
-    doc.fontSize(10).text("Pedidos", 58, y0 + 10).fontSize(18).text(String(summary.orders), 58, y0 + 26);
-
-    doc.roundedRect(220, y0, 160, 58, 8).stroke("#c9c3b5");
-    doc.fontSize(10).text("Items", 232, y0 + 10).fontSize(18).text(String(summary.items), 232, y0 + 26);
-
-    doc.roundedRect(394, y0, 160, 58, 8).stroke("#c9c3b5");
+    // Header block.
+    doc.rect(0, 0, pageW, 118).fill("#14324A");
+    doc.rect(0, 110, pageW, 8).fill("#D17A22");
+    doc.fillColor("#F8F3E8").fontSize(11).font("Helvetica-Bold").text("REPORTE DE VENTAS", x, 26);
+    doc.fillColor("#FFFFFF").fontSize(24).font("Helvetica-Bold").text(String(report.name || "Reporte"), x, 42, {
+      width: contentW,
+      ellipsis: true,
+    });
     doc
+      .fillColor("#D5DEE6")
       .fontSize(10)
-      .text("Facturacion", 406, y0 + 10)
-      .fontSize(18)
-      .text(`$${summary.revenue.toFixed(2)}`, 406, y0 + 26);
+      .font("Helvetica")
+      .text(`Tienda: ${report.filters.storeId || "N/A"}`, x, 88)
+      .text(`Generado: ${metaDate}`, x + 210, 88);
 
-    doc.moveDown(4.2);
-    doc.fontSize(14).text("Top productos");
-    doc.moveDown(0.6);
-    doc.fontSize(10).text("Producto", 46, doc.y).text("Unidades", 360, doc.y - 11).text("Facturacion", 445, doc.y - 11);
-    doc.moveTo(46, doc.y + 2).lineTo(554, doc.y + 2).stroke("#c9c3b5");
-    doc.moveDown(0.7);
+    doc.y = 140;
+    doc.fillColor("#1A1A1A").font("Helvetica-Bold").fontSize(15).text("Resumen");
 
-    for (const item of summary.byProduct.slice(0, 25)) {
+    const cardsY = doc.y + 10;
+    const gap = 10;
+    const cardW = (contentW - gap * 2) / 3;
+    const cardH = 74;
+    const cards = [
+      { label: "Pedidos", value: String(summary.orders), tone: "#E7F0F8" },
+      { label: "Items", value: String(summary.items), tone: "#F1EADC" },
+      { label: "Facturacion", value: formatMoney(summary.revenue), tone: "#EAE8F5" },
+    ];
+
+    cards.forEach((card, index) => {
+      const cardX = x + (cardW + gap) * index;
+      doc.roundedRect(cardX, cardsY, cardW, cardH, 10).fillAndStroke(card.tone, "#C9C1B3");
+      doc.fillColor("#5B5248").font("Helvetica").fontSize(10).text(card.label, cardX + 12, cardsY + 12);
+      doc.fillColor("#1D1D1D").font("Helvetica-Bold").fontSize(22).text(card.value, cardX + 12, cardsY + 30, {
+        width: cardW - 24,
+        ellipsis: true,
+      });
+    });
+
+    let tableY = cardsY + cardH + 26;
+    doc.fillColor("#1A1A1A").font("Helvetica-Bold").fontSize(15).text("Top productos", x, tableY);
+    tableY += 24;
+
+    const colProduct = 320;
+    const colQty = 70;
+    const colRevenue = contentW - colProduct - colQty;
+
+    function drawTableHeader(y) {
+      doc.rect(x, y, contentW, 24).fill("#EFE7D7");
       doc
-        .fontSize(9)
-        .text(String(item.product_name || "-"), 46, doc.y)
-        .text(String(item.quantity || 0), 366, doc.y - 11)
-        .text(`$${Number(item.revenue).toFixed(2)}`, 445, doc.y - 11);
-      doc.moveDown(0.4);
+        .fillColor("#3D372F")
+        .font("Helvetica-Bold")
+        .fontSize(10)
+        .text("Producto", x + 10, y + 8, { width: colProduct - 14 })
+        .text("Unidades", x + colProduct + 2, y + 8, { width: colQty - 8, align: "right" })
+        .text("Facturacion", x + colProduct + colQty + 2, y + 8, { width: colRevenue - 12, align: "right" });
+      return y + 24;
     }
+
+    tableY = drawTableHeader(tableY);
+
+    const rows = summary.byProduct.slice(0, 20);
+    if (!rows.length) {
+      doc
+        .fillColor("#5B5248")
+        .font("Helvetica")
+        .fontSize(11)
+        .text("No hay datos para los filtros actuales.", x, tableY + 10);
+    }
+
+    rows.forEach((item, index) => {
+      const product = String(item.product_name || "-");
+      const qty = String(item.quantity || 0);
+      const revenue = formatMoney(item.revenue);
+      const textH = doc.heightOfString(product, {
+        width: colProduct - 16,
+        align: "left",
+      });
+      const rowH = Math.max(24, textH + 10);
+
+      if (tableY + rowH > pageH - 54) {
+        doc.addPage();
+        doc.rect(0, 0, pageW, pageH).fill("#F3EFE7");
+        tableY = 42;
+        tableY = drawTableHeader(tableY);
+      }
+
+      if (index % 2 === 0) {
+        doc.rect(x, tableY, contentW, rowH).fill("#FBF8F1");
+      }
+
+      doc
+        .fillColor("#222")
+        .font("Helvetica")
+        .fontSize(10)
+        .text(product, x + 10, tableY + 5, { width: colProduct - 16, lineGap: 1 })
+        .text(qty, x + colProduct + 2, tableY + 8, { width: colQty - 8, align: "right" })
+        .text(revenue, x + colProduct + colQty + 2, tableY + 8, { width: colRevenue - 12, align: "right" });
+
+      doc.moveTo(x, tableY + rowH).lineTo(x + contentW, tableY + rowH).stroke("#D6CEBF");
+      tableY += rowH;
+    });
+
+    doc
+      .fillColor("#7A7165")
+      .font("Helvetica")
+      .fontSize(9)
+      .text("Reporte generado automaticamente por TN Reporting", x, pageH - 26, {
+        width: contentW,
+        align: "right",
+      });
 
     doc.end();
   })();
