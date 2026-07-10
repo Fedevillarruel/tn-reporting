@@ -242,17 +242,28 @@ openStoreLinkBtn.addEventListener("click", async () => {
     return;
   }
 
+  // Open immediately on user gesture to avoid popup blockers.
+  const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+
   const response = await fetch(
     `/api/oauth/install-url?storeDomain=${encodeURIComponent(storeDomain)}`
   );
   const data = await response.json();
 
   if (!response.ok) {
+    if (popup && !popup.closed) {
+      popup.close();
+    }
     setStatus(data.error || "No se pudo generar el link de vinculacion");
     return;
   }
 
-  window.open(data.authorizeUrl, "_blank", "noopener,noreferrer");
+  if (popup && !popup.closed) {
+    popup.location.href = data.authorizeUrl;
+  } else {
+    // Fallback when browser still blocks the popup.
+    window.location.href = data.authorizeUrl;
+  }
   setStatus("Se abrio el link de vinculacion en una nueva pestana");
 });
 
