@@ -20,6 +20,7 @@ const {
   summarizeSales,
   createShareReport,
   createShareToken,
+  listShareReports,
   authenticateReport,
   authenticateReportToken,
   getReportBySlug,
@@ -486,15 +487,16 @@ app.post("/api/reports", (req, res) => {
       ...(filters || {}),
       storeId,
     };
-    const slug = createShareReport({
-      name,
-      password,
-      filters: reportFilters,
-    });
     const token = createShareToken({
       name,
       password,
       filters: reportFilters,
+    });
+    const slug = createShareReport({
+      name,
+      password,
+      filters: reportFilters,
+      token,
     });
     const baseUrl = `${req.protocol}://${req.get("host")}`;
 
@@ -507,6 +509,32 @@ app.post("/api/reports", (req, res) => {
       legacyShareUrl: `${baseUrl}/share.html?slug=${slug}`,
     });
   })();
+});
+
+app.get("/api/reports/history", (req, res) => {
+  const { storeId } = getConnectionConfig(req);
+  if (!storeId) {
+    return res.json({ reports: [] });
+  }
+
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const reports = listShareReports(storeId).map((report) => {
+    const hasToken = Boolean(report.token);
+    const shareUrl = hasToken
+      ? `${baseUrl}/share.html?token=${encodeURIComponent(report.token)}`
+      : `${baseUrl}/share.html?slug=${encodeURIComponent(report.slug)}`;
+    const pdfUrl = hasToken
+      ? `${baseUrl}/api/reports/token/${encodeURIComponent(report.token)}/pdf`
+      : `${baseUrl}/api/reports/${encodeURIComponent(report.slug)}/pdf`;
+
+    return {
+      ...report,
+      shareUrl,
+      pdfUrl,
+    };
+  });
+
+  return res.json({ reports });
 });
 
 app.get("/api/reports/token/:token", (req, res) => {

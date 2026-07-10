@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { filterSales, createReport, getReportBySlug } = require("./db");
+const { filterSales, createReport, getReportBySlug, listReportsByStore } = require("./db");
 
 function createSlug(size = 10) {
   return crypto.randomBytes(size).toString("base64url").slice(0, size);
@@ -75,12 +75,13 @@ function summarizeSales(filters = {}) {
   };
 }
 
-function createShareReport({ name, password, filters }) {
+function createShareReport({ name, password, filters, token = "" }) {
   const slug = createSlug(10);
   const now = new Date().toISOString();
 
   createReport({
     slug,
+    token,
     name,
     password,
     filters: filters || {},
@@ -165,12 +166,24 @@ function authenticateReportToken(token, password) {
   };
 }
 
+function listShareReports(storeId) {
+  return listReportsByStore(storeId).map((report) => ({
+    slug: report.slug,
+    token: report.token || "",
+    name: String(report.name || "Reporte"),
+    storeId: String(report?.filters?.storeId || ""),
+    createdAt: report.created_at || null,
+    hasPassword: Boolean(report.password),
+  }));
+}
+
 module.exports = {
   listSales,
   listCatalog,
   summarizeSales,
   createShareReport,
   createShareToken,
+  listShareReports,
   getReportBySlug,
   authenticateReport,
   authenticateReportToken,

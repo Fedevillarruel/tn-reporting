@@ -10,6 +10,7 @@ const storeManager = $("#storeManager");
 const storeSummary = $("#storeSummary");
 const activeStoreTitle = $("#activeStoreTitle");
 const changeAccountBtn = $("#changeAccount");
+const savedReportsBox = $("#savedReports");
 
 let currentFilters = {
   fromDate: "",
@@ -121,6 +122,133 @@ async function nativeShare(url) {
 
   await copyToClipboard(url);
   alert("No hay share nativo en este navegador. Se copio el link.");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function localHistoryKey() {
+  return `tn_reports_${String(storeSelect.value || "")}`;
+}
+
+function readLocalHistory() {
+  try {
+    const raw = window.localStorage.getItem(localHistoryKey());
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalHistory(items) {
+  window.localStorage.setItem(localHistoryKey(), JSON.stringify(items.slice(0, 20)));
+}
+
+function rememberReportLocally({ name, shareUrl, pdfUrl }) {
+  if (!storeSelect.value || !shareUrl || !pdfUrl) {
+    return;
+  }
+
+  const next = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: String(name || "Reporte"),
+    createdAt: new Date().toISOString(),
+    shareUrl,
+    pdfUrl,
+  };
+
+  const current = readLocalHistory().filter((item) => item.shareUrl !== shareUrl);
+  writeLocalHistory([next, ...current]);
+}
+
+function renderSavedReports(reports) {
+  if (!savedReportsBox) {
+    return;
+  }
+
+  if (!reports.length) {
+    savedReportsBox.innerHTML = '<p class="muted">Aun no hay links guardados para esta tienda.</p>';
+    return;
+  }
+
+  savedReportsBox.innerHTML = reports
+    .slice(0, 20)
+    .map((report) => {
+      const created = report.createdAt ? new Date(report.createdAt).toLocaleString() : "-";
+      const encodedShare = encodeURIComponent(report.shareUrl || "");
+      const encodedPdf = encodeURIComponent(report.pdfUrl || "");
+      return `
+        <article class="saved-report-item">
+          <div>
+            <strong>${escapeHtml(report.name || "Reporte")}</strong>
+            <p class="muted">Creado: ${escapeHtml(created)}</p>
+          </div>
+          <div class="saved-report-actions">
+            <button type="button" data-copy-share="${encodedShare}">Copiar link</button>
+            <button type="button" data-copy-pdf="${encodedPdf}">Copiar PDF</button>
+            <a class="btn-link" href="${escapeHtml(report.shareUrl || "#")}" target="_blank" rel="noreferrer">Abrir</a>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  savedReportsBox.querySelectorAll("button[data-copy-share]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await copyToClipboard(decodeURIComponent(btn.getAttribute("data-copy-share") || ""));
+      setStatus("Link compartible copiado");
+    });
+  });
+
+  savedReportsBox.querySelectorAll("button[data-copy-pdf]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await copyToClipboard(decodeURIComponent(btn.getAttribute("data-copy-pdf") || ""));
+      setStatus("Link PDF copiado");
+    });
+  });
+}
+
+async function loadSavedReports() {
+  if (!savedReportsBox || !storeSelect.value) {
+    return;
+  }
+
+  const local = readLocalHistory();
+  try {
+    const response = await fetch("/api/reports/history");
+    if (!response.ok) {
+      renderSavedReports(local);
+      return;
+    }
+
+    const data = await response.json();
+    const serverReports = (data.reports || []).map((item) => ({
+      name: item.name,
+      createdAt: item.createdAt,
+      shareUrl: item.shareUrl,
+      pdfUrl: item.pdfUrl,
+    }));
+
+    const mergedMap = new Map();
+    [...serverReports, ...local].forEach((item) => {
+      if (item?.shareUrl) {
+        mergedMap.set(item.shareUrl, item);
+      }
+    });
+    const merged = Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+    );
+    writeLocalHistory(merged);
+    renderSavedReports(merged);
+  } catch {
+    renderSavedReports(local);
+  }
 }
 
 async function loadStores() {
@@ -259,6 +387,7 @@ storeSelect.addEventListener("change", async () => {
     $("#fromDate").value = "";
     $("#toDate").value = "";
     await loadSales();
+    await loadSavedReports();
   }
 });
 
@@ -318,6 +447,12 @@ shareForm.addEventListener("submit", async (e) => {
 
   $("#shareLink").value = data.shareUrl;
   $("#pdfLink").value = `${data.pdfUrl}?password=${encodeURIComponent(password)}`;
+  rememberReportLocally({
+    name,
+    shareUrl: data.shareUrl,
+    pdfUrl: `${data.pdfUrl}?password=${encodeURIComponent(password)}`,
+  });
+  await loadSavedReports();
   setStatus("Link y PDF generados");
 });
 
@@ -367,6 +502,7 @@ async function bootstrap() {
   }
 
   await loadSales();
+  await loadSavedReports();
   window.setInterval(loadSales, 20000);
 }
 

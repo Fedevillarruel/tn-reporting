@@ -19,6 +19,9 @@ body {
     radial-gradient(circle at 84% 6%, #dfc9a1 0, transparent 30%),
     radial-gradient(circle at 10% 18%, #94b6cf 0, transparent 32%),
     var(--bg);
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-size: 120vw 120vh, 120vw 120vh, auto;
+  background-attachment: fixed;
 }
 
 .app-shell {
@@ -245,6 +248,30 @@ th {
   grid-template-columns: 1fr auto auto;
 }
 
+.saved-reports {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+}
+
+.saved-report-item {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.65rem;
+  background: #fff;
+}
+
+.saved-report-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .row-actions {
   margin-top: 0.7rem;
 }
@@ -309,8 +336,13 @@ th {
   .store-row,
   .store-link-row,
   .summary-row,
-  .share-box {
+  .share-box,
+  .saved-report-item {
     grid-template-columns: 1fr;
+  }
+
+  .saved-report-actions {
+    justify-content: flex-start;
   }
 }
 

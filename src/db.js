@@ -185,6 +185,18 @@ function getReportBySlug(slug) {
   return readState().reports.find((report) => report.slug === slug) || null;
 }
 
+function listReportsByStore(storeId) {
+  return readState()
+    .reports.filter((report) => {
+      if (!storeId) {
+        return true;
+      }
+      return String(report?.filters?.storeId || "") === String(storeId);
+    })
+    .slice()
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+}
+
 module.exports = {
   getSetting,
   setSetting,
@@ -192,6 +204,7 @@ module.exports = {
   filterSales,
   createReport,
   getReportBySlug,
+  listReportsByStore,
   upsertStore,
   listStores,
   getStoreById,
