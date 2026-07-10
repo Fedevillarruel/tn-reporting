@@ -5,10 +5,18 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const PDFDocument = require("pdfkit");
 
-const { getSetting, setSetting, upsertSales } = require("./db");
+const {
+  getSetting,
+  setSetting,
+  upsertSales,
+  upsertStore,
+  listStores,
+  getStoreById,
+} = require("./db");
 const { fetchAllOrderLines, exchangeOAuthCode } = require("./tiendanube");
 const {
   listSales,
+  listCatalog,
   summarizeSales,
   createShareReport,
   authenticateReport,
@@ -20,8 +28,10 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const AUTO_SYNC_MS = Number(process.env.TN_AUTO_SYNC_MS || 60000);
 
 const liveClients = new Map();
+const syncLocks = new Set();
 
 const dataDir = path.join(process.cwd(), "data");
 if (!isServerless && !fs.existsSync(dataDir)) {
@@ -44,6 +54,70 @@ function getConnectionConfig() {
   };
 }
 
+function storePublicInfo(storeId) {
+  const store = getStoreById(storeId);
+  if (!store) {
+    return null;
+  }
+
+  return {
+    ...store,
+    lastSyncAt: Number(getSetting(`tn_store_${storeId}_last_sync`) || 0) || null,
+    hasSystemPassword: Boolean(getSetting(`tn_store_${storeId}_system_password`)),
+  };
+}
+
+async function syncStoreSales({ storeId, accessToken, force = false }) {
+  if (!storeId || !accessToken) {
+    return { ok: false, reason: "missing_config" };
+  }
+
+  const syncKey = `tn_store_${storeId}_last_sync`;
+  const lastSync = Number(getSetting(syncKey) || 0);
+  const now = Date.now();
+
+  if (!force && now - lastSync < AUTO_SYNC_MS) {
+    return { ok: true, skipped: true, reason: "fresh" };
+  }
+
+  if (syncLocks.has(String(storeId))) {
+    return { ok: true, skipped: true, reason: "in_progress" };
+  }
+
+  syncLocks.add(String(storeId));
+  try {
+    const lines = await fetchAllOrderLines({
+      storeId,
+      accessToken,
+      maxPages: Number(process.env.TN_MAX_PAGES || 20),
+    });
+
+    upsertSales(lines);
+    setSetting(syncKey, String(now));
+
+    for (const slug of liveClients.keys()) {
+      publishLiveReport(slug);
+    }
+
+    return {
+      ok: true,
+      skipped: false,
+      importedRows: lines.length,
+      syncedAt: new Date(now).toISOString(),
+    };
+  } finally {
+    syncLocks.delete(String(storeId));
+  }
+}
+
+function htmlEscape(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 function publishLiveReport(slug) {
   const clients = liveClients.get(slug);
@@ -78,91 +152,96 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/oauth/callback", (req, res) => {
   return (async () => {
-  const code = String(req.query.code || "");
-  const storeIdFromQuery = String(
-    req.query.store_id || req.query.storeId || req.query.user_id || req.query.shop_id || ""
-  );
-  const appId = process.env.TN_APP_ID;
-  const clientSecret = process.env.TN_CLIENT_SECRET;
-  const appUrl = process.env.TN_APP_URL || `${req.protocol}://${req.get("host")}`;
-
-  if (!code) {
-    return res.status(400).json({
-      ok: false,
-      error: "Faltan parametros OAuth",
-      expected: ["code"],
-      receivedQueryKeys: Object.keys(req.query || {}),
-    });
-  }
-
-  if (!appId || !clientSecret) {
-    return res.status(500).json({
-      ok: false,
-      error: "Falta configuracion OAuth en variables de entorno",
-      required: ["TN_APP_ID", "TN_CLIENT_SECRET"],
-    });
-  }
-
-  try {
-    const tokenResponse = await exchangeOAuthCode({
-      code,
-      clientId: appId,
-      clientSecret,
-    });
-
-    const resolvedStoreId = String(
-      storeIdFromQuery || tokenResponse.user_id || tokenResponse.store_id || ""
+    const code = String(req.query.code || "");
+    const storeIdFromQuery = String(
+      req.query.store_id || req.query.storeId || req.query.user_id || req.query.shop_id || ""
     );
+    const appId = process.env.TN_APP_ID;
+    const clientSecret = process.env.TN_CLIENT_SECRET;
+    const appUrl = process.env.TN_APP_URL || `${req.protocol}://${req.get("host")}`;
 
-    if (!tokenResponse.access_token) {
-      return res.status(502).json({
+    if (!code) {
+      return res.status(400).json({
         ok: false,
-        error: "Tiendanube no devolvio access_token",
-        detail: tokenResponse,
+        error: "Faltan parametros OAuth",
+        expected: ["code"],
+        receivedQueryKeys: Object.keys(req.query || {}),
       });
     }
 
-    if (!resolvedStoreId) {
-      return res.status(502).json({
+    if (!appId || !clientSecret) {
+      return res.status(500).json({
         ok: false,
-        error: "Tiendanube no devolvio identificador de tienda",
-        detail: tokenResponse,
+        error: "Falta configuracion OAuth en variables de entorno",
+        required: ["TN_APP_ID", "TN_CLIENT_SECRET"],
       });
     }
 
-    setSetting(`tn_store_${resolvedStoreId}_access_token`, String(tokenResponse.access_token));
-    setSetting("tn_active_store_id", String(resolvedStoreId));
-    setSetting("tn_store_id", String(resolvedStoreId));
-    setSetting("tn_access_token", String(tokenResponse.access_token));
+    try {
+      const tokenResponse = await exchangeOAuthCode({
+        code,
+        clientId: appId,
+        clientSecret,
+      });
 
-    const installedUrl = `${appUrl}/?installed=1&store_id=${encodeURIComponent(resolvedStoreId)}`;
-    return res.status(200).send(`
-      <!doctype html>
-      <html lang="es">
-        <head>
-          <meta charset="UTF-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>Instalacion completa</title>
-          <style>
-            body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
-            a { color: #0b6a73; }
-          </style>
-        </head>
-        <body>
-          <h1>App conectada con Tiendanube</h1>
-          <p>Tienda vinculada: <strong>${resolvedStoreId}</strong></p>
-          <p>Ya puedes volver al panel para sincronizar ventas y generar reportes.</p>
-          <p><a href="${installedUrl}">Ir al panel</a></p>
-        </body>
-      </html>
-    `);
-  } catch (error) {
-    return res.status(502).json({
-      ok: false,
-      error: "No se pudo completar OAuth con Tiendanube",
-      detail: error.response?.data || error.message,
-    });
-  }
+      const resolvedStoreId = String(storeIdFromQuery || tokenResponse.user_id || tokenResponse.store_id || "");
+
+      if (!tokenResponse.access_token) {
+        return res.status(502).json({
+          ok: false,
+          error: "Tiendanube no devolvio access_token",
+          detail: tokenResponse,
+        });
+      }
+
+      if (!resolvedStoreId) {
+        return res.status(502).json({
+          ok: false,
+          error: "Tiendanube no devolvio identificador de tienda",
+          detail: tokenResponse,
+        });
+      }
+
+      setSetting(`tn_store_${resolvedStoreId}_access_token`, String(tokenResponse.access_token));
+      setSetting("tn_active_store_id", String(resolvedStoreId));
+      setSetting("tn_store_id", String(resolvedStoreId));
+      setSetting("tn_access_token", String(tokenResponse.access_token));
+
+      upsertStore({
+        store_id: String(resolvedStoreId),
+        name: String(tokenResponse.user_name || tokenResponse.store_name || `Tienda ${resolvedStoreId}`),
+        linked_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      });
+
+      const installedUrl = `${appUrl}/?installed=1&store_id=${encodeURIComponent(resolvedStoreId)}`;
+      return res.status(200).send(`
+        <!doctype html>
+        <html lang="es">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Instalacion completa</title>
+            <style>
+              body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+              a { color: #0b6a73; }
+            </style>
+          </head>
+          <body>
+            <h1>App conectada con Tiendanube</h1>
+            <p>Tienda vinculada: <strong>${htmlEscape(resolvedStoreId)}</strong></p>
+            <p>Ya puedes volver al panel para sincronizar ventas y generar reportes.</p>
+            <p><a href="${installedUrl}">Ir al panel</a></p>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      return res.status(502).json({
+        ok: false,
+        error: "No se pudo completar OAuth con Tiendanube",
+        detail: error.response?.data || error.message,
+      });
+    }
   })();
 });
 
@@ -178,11 +257,45 @@ app.post("/api/privacy/customers-data-request", (_req, res) => {
   return res.status(202).json({ ok: true });
 });
 
+app.get("/api/stores", (_req, res) => {
+  const stores = listStores().map((store) => storePublicInfo(store.store_id));
+  const activeStoreId = String(getSetting("tn_active_store_id") || "");
+
+  return res.json({ stores, activeStoreId });
+});
+
+app.post("/api/stores/active", (req, res) => {
+  const storeId = String(req.body?.storeId || "");
+  if (!storeId || !getStoreById(storeId)) {
+    return res.status(404).json({ ok: false, error: "Tienda no encontrada" });
+  }
+
+  setSetting("tn_active_store_id", storeId);
+  return res.json({ ok: true, storeId });
+});
+
+app.post("/api/stores/:storeId/password", (req, res) => {
+  const storeId = String(req.params.storeId || "");
+  const password = String(req.body?.password || "").trim();
+
+  if (!storeId || !getStoreById(storeId)) {
+    return res.status(404).json({ ok: false, error: "Tienda no encontrada" });
+  }
+
+  if (!password) {
+    return res.status(400).json({ ok: false, error: "Password requerida" });
+  }
+
+  setSetting(`tn_store_${storeId}_system_password`, password);
+  return res.json({ ok: true });
+});
+
 app.get("/api/connection", (_req, res) => {
   const { storeId, accessToken } = getConnectionConfig();
   res.json({
     connected: Boolean(storeId && accessToken),
     storeId: storeId || "",
+    stores: listStores().map((store) => storePublicInfo(store.store_id)),
   });
 });
 
@@ -193,8 +306,17 @@ app.post("/api/connection", (req, res) => {
     return res.status(400).json({ error: "storeId y accessToken son obligatorios" });
   }
 
-  setSetting("tn_store_id", String(storeId));
+  const resolvedStoreId = String(storeId);
+  setSetting("tn_store_id", resolvedStoreId);
   setSetting("tn_access_token", String(accessToken));
+  setSetting(`tn_store_${resolvedStoreId}_access_token`, String(accessToken));
+  setSetting("tn_active_store_id", resolvedStoreId);
+  upsertStore({
+    store_id: resolvedStoreId,
+    name: `Tienda ${resolvedStoreId}`,
+    linked_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  });
 
   return res.json({ ok: true });
 });
@@ -204,26 +326,11 @@ app.post("/api/tiendanube/sync", async (_req, res) => {
     const { storeId, accessToken } = getConnectionConfig();
 
     if (!storeId || !accessToken) {
-      return res.status(400).json({ error: "Configura storeId y accessToken antes de sincronizar" });
+      return res.status(400).json({ error: "No hay tienda activa vinculada" });
     }
 
-    const lines = await fetchAllOrderLines({
-      storeId,
-      accessToken,
-      maxPages: Number(process.env.TN_MAX_PAGES || 20),
-    });
-
-    upsertSales(lines);
-
-    for (const slug of liveClients.keys()) {
-      publishLiveReport(slug);
-    }
-
-    return res.json({
-      ok: true,
-      importedRows: lines.length,
-      syncedAt: new Date().toISOString(),
-    });
+    const result = await syncStoreSales({ storeId, accessToken, force: true });
+    return res.json(result);
   } catch (error) {
     return res.status(500).json({
       error: "No se pudo sincronizar con Tiendanube",
@@ -233,95 +340,158 @@ app.post("/api/tiendanube/sync", async (_req, res) => {
 });
 
 app.get("/api/sales", (req, res) => {
-  const filters = {
-    fromDate: req.query.fromDate,
-    toDate: req.query.toDate,
-    productName: req.query.productName,
-  };
+  return (async () => {
+    const { storeId, accessToken } = getConnectionConfig();
+    if (!storeId || !accessToken) {
+      return res.status(400).json({ ok: false, error: "No hay tienda activa vinculada" });
+    }
 
-  const rows = listSales(filters);
-  const summary = summarizeSales(filters);
+    await syncStoreSales({ storeId, accessToken, force: false });
 
-  res.json({ rows, summary, filters });
+    const filters = {
+      storeId,
+      fromDate: req.query.fromDate,
+      toDate: req.query.toDate,
+      productName: req.query.productName,
+      variantName: req.query.variantName,
+    };
+
+    const rows = listSales(filters);
+    const summary = summarizeSales(filters);
+    const catalog = listCatalog({ storeId });
+    const systemPassword = getSetting(`tn_store_${storeId}_system_password`) || "";
+
+    return res.json({ rows, summary, filters, catalog, storeId, systemPassword });
+  })();
 });
 
 app.post("/api/reports", (req, res) => {
-  const { name, password, filters } = req.body || {};
+  return (async () => {
+    const { storeId, accessToken } = getConnectionConfig();
+    if (!storeId || !accessToken) {
+      return res.status(400).json({ error: "No hay tienda activa vinculada" });
+    }
 
-  if (!name || !password) {
-    return res.status(400).json({ error: "name y password son obligatorios" });
-  }
+    await syncStoreSales({ storeId, accessToken, force: false });
 
-  const slug = createShareReport({ name, password, filters: filters || {} });
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const { name, password, filters } = req.body || {};
 
-  return res.json({
-    ok: true,
-    slug,
-    shareUrl: `${baseUrl}/share.html?slug=${slug}`,
-    pdfUrl: `${baseUrl}/api/reports/${slug}/pdf`,
-  });
+    if (!name || !password) {
+      return res.status(400).json({ error: "name y password son obligatorios" });
+    }
+
+    const slug = createShareReport({
+      name,
+      password,
+      filters: {
+        ...(filters || {}),
+        storeId,
+      },
+    });
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    return res.json({
+      ok: true,
+      slug,
+      shareUrl: `${baseUrl}/share.html?slug=${slug}`,
+      pdfUrl: `${baseUrl}/api/reports/${slug}/pdf`,
+    });
+  })();
 });
 
 app.get("/api/reports/:slug", (req, res) => {
-  const { slug } = req.params;
-  const { password } = req.query;
+  return (async () => {
+    const { slug } = req.params;
+    const { password } = req.query;
 
-  const report = authenticateReport(slug, String(password || ""));
+    const report = authenticateReport(slug, String(password || ""));
 
-  if (!report) {
-    return res.status(401).json({ error: "Reporte no encontrado o clave incorrecta" });
-  }
+    if (!report) {
+      return res.status(401).json({ error: "Reporte no encontrado o clave incorrecta" });
+    }
 
-  return res.json({
-    report: {
-      slug: report.slug,
-      name: report.name,
-      filters: report.filters,
-      updatedAt: report.updated_at,
-    },
-    summary: summarizeSales(report.filters),
-  });
+    const storeAccessToken = getSetting(`tn_store_${report.filters.storeId}_access_token`) || "";
+    if (report.filters.storeId && storeAccessToken) {
+      await syncStoreSales({ storeId: report.filters.storeId, accessToken: storeAccessToken, force: false });
+    }
+
+    return res.json({
+      report: {
+        slug: report.slug,
+        name: report.name,
+        filters: report.filters,
+        updatedAt: report.updated_at,
+      },
+      summary: summarizeSales(report.filters),
+    });
+  })();
 });
 
 app.get("/api/reports/:slug/pdf", (req, res) => {
-  const { slug } = req.params;
-  const { password } = req.query;
-  const report = authenticateReport(slug, String(password || ""));
+  return (async () => {
+    const { slug } = req.params;
+    const { password } = req.query;
+    const report = authenticateReport(slug, String(password || ""));
 
-  if (!report) {
-    return res.status(401).json({ error: "Clave incorrecta" });
-  }
+    if (!report) {
+      return res.status(401).json({ error: "Clave incorrecta" });
+    }
 
-  const summary = summarizeSales(report.filters);
+    const storeAccessToken = getSetting(`tn_store_${report.filters.storeId}_access_token`) || "";
+    if (report.filters.storeId && storeAccessToken) {
+      await syncStoreSales({ storeId: report.filters.storeId, accessToken: storeAccessToken, force: false });
+    }
 
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename=report-${slug}.pdf`);
+    const summary = summarizeSales(report.filters);
 
-  const doc = new PDFDocument({ margin: 50 });
-  doc.pipe(res);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=report-${slug}.pdf`);
 
-  doc.fontSize(22).text(report.name);
-  doc.moveDown(0.4);
-  doc.fontSize(11).text(`Generado: ${new Date().toLocaleString()}`);
-  doc.moveDown(0.8);
+    const doc = new PDFDocument({ margin: 46 });
+    doc.pipe(res);
 
-  doc.fontSize(14).text("Resumen");
-  doc.moveDown(0.5);
-  doc.fontSize(11).text(`Pedidos: ${summary.orders}`);
-  doc.fontSize(11).text(`Items vendidos: ${summary.items}`);
-  doc.fontSize(11).text(`Facturacion: $${summary.revenue.toFixed(2)}`);
-  doc.moveDown(1);
+    doc.rect(0, 0, doc.page.width, 92).fill("#005f73");
+    doc.fillColor("#ffffff").fontSize(20).text(report.name, 46, 30);
+    doc.fontSize(10).text(`Store: ${report.filters.storeId || "N/A"}`, 46, 58);
+    doc.fontSize(10).text(`Generado: ${new Date().toLocaleString()}`, 230, 58);
+    doc.fillColor("#1e1b18");
+    doc.moveDown(3.4);
 
-  doc.fontSize(14).text("Top productos");
-  doc.moveDown(0.6);
-  for (const item of summary.byProduct.slice(0, 25)) {
-    doc.fontSize(10).text(
-      `${item.product_name} | Unidades: ${item.quantity} | Facturacion: $${Number(item.revenue).toFixed(2)}`
-    );
-  }
+    doc.fontSize(14).text("Resumen general");
+    doc.moveDown(0.5);
+    const y0 = doc.y;
 
-  doc.end();
+    doc.roundedRect(46, y0, 160, 58, 8).stroke("#c9c3b5");
+    doc.fontSize(10).text("Pedidos", 58, y0 + 10).fontSize(18).text(String(summary.orders), 58, y0 + 26);
+
+    doc.roundedRect(220, y0, 160, 58, 8).stroke("#c9c3b5");
+    doc.fontSize(10).text("Items", 232, y0 + 10).fontSize(18).text(String(summary.items), 232, y0 + 26);
+
+    doc.roundedRect(394, y0, 160, 58, 8).stroke("#c9c3b5");
+    doc
+      .fontSize(10)
+      .text("Facturacion", 406, y0 + 10)
+      .fontSize(18)
+      .text(`$${summary.revenue.toFixed(2)}`, 406, y0 + 26);
+
+    doc.moveDown(4.2);
+    doc.fontSize(14).text("Top productos");
+    doc.moveDown(0.6);
+    doc.fontSize(10).text("Producto", 46, doc.y).text("Unidades", 360, doc.y - 11).text("Facturacion", 445, doc.y - 11);
+    doc.moveTo(46, doc.y + 2).lineTo(554, doc.y + 2).stroke("#c9c3b5");
+    doc.moveDown(0.7);
+
+    for (const item of summary.byProduct.slice(0, 25)) {
+      doc
+        .fontSize(9)
+        .text(String(item.product_name || "-"), 46, doc.y)
+        .text(String(item.quantity || 0), 366, doc.y - 11)
+        .text(`$${Number(item.revenue).toFixed(2)}`, 445, doc.y - 11);
+      doc.moveDown(0.4);
+    }
+
+    doc.end();
+  })();
 });
 
 app.get("/api/reports/:slug/stream", (req, res) => {
@@ -368,7 +538,15 @@ app.get("/api/reports/:slug/stream", (req, res) => {
 });
 
 if (!isServerless) {
-  setInterval(() => {
+  setInterval(async () => {
+    const stores = listStores();
+    for (const store of stores) {
+      const accessToken = getSetting(`tn_store_${store.store_id}_access_token`) || "";
+      if (accessToken) {
+        await syncStoreSales({ storeId: store.store_id, accessToken, force: false });
+      }
+    }
+
     for (const slug of liveClients.keys()) {
       publishLiveReport(slug);
     }

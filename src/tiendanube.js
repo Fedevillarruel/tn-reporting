@@ -3,11 +3,12 @@ const axios = require("axios");
 const API_BASE = "https://api.tiendanube.com/v1";
 const OAUTH_TOKEN_URL = process.env.TN_OAUTH_TOKEN_URL || "https://www.tiendanube.com/apps/authorize/token";
 
-function normalizeOrderLine(order, line) {
+function normalizeOrderLine(order, line, storeId) {
   const quantity = Number(line.quantity || 0);
   const price = Number(line.price || 0);
 
   return {
+    store_id: String(storeId),
     order_id: Number(order.id),
     order_number: order.number ? String(order.number) : String(order.id),
     created_at: order.created_at,
@@ -49,7 +50,7 @@ async function fetchAllOrderLines({ storeId, accessToken, maxPages = 20 }) {
 
     for (const order of orders) {
       for (const line of order.products || []) {
-        lines.push(normalizeOrderLine(order, line));
+        lines.push(normalizeOrderLine(order, line, storeId));
       }
     }
 

@@ -16,37 +16,31 @@
     <main class="app-shell">
       <header class="hero">
         <p class="chip">Tiendanube Live Reporting</p>
-        <h1>Vincula rapido, filtra ventas y comparte reportes PDF en vivo</h1>
+        <h1>Selecciona tienda, filtra ventas y comparte reportes en vivo</h1>
       </header>
 
-      <section class="card two-col">
+      <section class="card top-bar">
         <div>
-          <h2>1) Conexion Tiendanube</h2>
-          <p class="muted">Guarda credenciales para sincronizar ventas.</p>
-          <form id="connection-form" class="stack">
+          <h2>Tienda activa</h2>
+          <p class="muted">La sincronizacion corre en automatico. Cambia la tienda desde este selector.</p>
+          <div class="store-row">
             <label>
-              Store ID
-              <input id="storeId" name="storeId" required placeholder="123456" />
+              Tienda vinculada
+              <select id="storeSelect"></select>
             </label>
             <label>
-              Access Token
-              <input id="accessToken" name="accessToken" required placeholder="xxxxxxxx" />
+              Clave del sistema reporting
+              <input id="systemPassword" placeholder="Define una clave por tienda" />
             </label>
-            <button type="submit">Guardar conexion</button>
-          </form>
-        </div>
-
-        <div>
-          <h2>2) Sincronizacion</h2>
-          <p class="muted">Trae ventas desde Tiendanube y actualiza indicadores.</p>
-          <button id="syncBtn" class="cta">Sincronizar ventas ahora</button>
-          <p id="syncStatus" class="status"></p>
+            <button id="saveSystemPassword" class="cta" type="button">Guardar clave</button>
+          </div>
+          <p id="syncStatus" class="status">Esperando datos...</p>
         </div>
       </section>
 
       <section class="card">
-        <h2>3) Filtros y vista</h2>
-        <form id="filters-form" class="grid-3">
+        <h2>Filtros y vista</h2>
+        <form id="filters-form" class="grid-4">
           <label>
             Desde
             <input type="datetime-local" id="fromDate" />
@@ -57,7 +51,11 @@
           </label>
           <label>
             Producto
-            <input id="productName" placeholder="ej: Remera" />
+            <select id="productName"></select>
+          </label>
+          <label>
+            Variante
+            <select id="variantName"></select>
           </label>
         </form>
         <div class="row-actions">
@@ -98,7 +96,7 @@
 
       <section class="card two-col">
         <div>
-          <h2>4) Crear link compartible</h2>
+          <h2>Crear link compartible</h2>
           <form id="share-form" class="stack">
             <label>
               Nombre del reporte
@@ -114,9 +112,17 @@
 
         <div>
           <h2>Resultado</h2>
-          <p class="muted">Comparte el link y la clave. El reporte se actualiza en vivo.</p>
-          <p id="shareLink" class="status"></p>
-          <p id="pdfLink" class="status"></p>
+          <p class="muted">Link y PDF con acciones rapidas de copiar y compartir.</p>
+          <div class="share-box">
+            <input id="shareLink" readonly placeholder="Aqui aparece el link" />
+            <button id="copyShareLink" type="button">Copiar</button>
+            <button id="shareShareLink" type="button">Compartir</button>
+          </div>
+          <div class="share-box">
+            <input id="pdfLink" readonly placeholder="Aqui aparece el link PDF" />
+            <button id="copyPdfLink" type="button">Copiar</button>
+            <button id="sharePdfLink" type="button">Compartir</button>
+          </div>
         </div>
       </section>
     </main>

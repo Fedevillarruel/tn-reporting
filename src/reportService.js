@@ -10,6 +10,32 @@ function listSales(filters = {}) {
   return filterSales(filters).slice(0, 2000);
 }
 
+function listCatalog(filters = {}) {
+  const rows = filterSales({ storeId: filters.storeId });
+  const products = new Map();
+
+  for (const row of rows) {
+    const productKey = String(row.product_name || "Producto");
+    const variantValue = String(row.variant_name || "Sin variante");
+
+    if (!products.has(productKey)) {
+      products.set(productKey, {
+        productName: productKey,
+        variants: new Set(),
+      });
+    }
+
+    products.get(productKey).variants.add(variantValue);
+  }
+
+  return Array.from(products.values())
+    .sort((left, right) => left.productName.localeCompare(right.productName))
+    .map((item) => ({
+      productName: item.productName,
+      variants: Array.from(item.variants.values()).sort((a, b) => a.localeCompare(b)),
+    }));
+}
+
 function summarizeSales(filters = {}) {
   const rows = filterSales(filters);
   const uniqueOrders = new Set(rows.map((row) => row.order_id));
@@ -78,6 +104,7 @@ function authenticateReport(slug, password) {
 
 module.exports = {
   listSales,
+  listCatalog,
   summarizeSales,
   createShareReport,
   getReportBySlug,

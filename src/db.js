@@ -16,6 +16,7 @@ function defaultState() {
     settings: {},
     sales: [],
     reports: [],
+    stores: [],
   };
 }
 
@@ -64,13 +65,13 @@ function upsertSales(lines) {
   mutateState((state) => {
     const index = new Map(
       state.sales.map((item, itemIndex) => [
-        `${item.order_id}:${item.product_id}:${item.variant_name}`,
+        `${item.store_id}:${item.order_id}:${item.product_id}:${item.variant_name}`,
         itemIndex,
       ])
     );
 
     for (const line of lines) {
-      const key = `${line.order_id}:${line.product_id}:${line.variant_name}`;
+      const key = `${line.store_id}:${line.order_id}:${line.product_id}:${line.variant_name}`;
       const existingIndex = index.get(key);
       if (existingIndex === undefined) {
         state.sales.push(line);
@@ -87,6 +88,10 @@ function filterSales(filters = {}) {
 
   return state.sales
     .filter((sale) => {
+      if (filters.storeId && String(sale.store_id || "") !== String(filters.storeId)) {
+        return false;
+      }
+
       if (filters.fromDate && new Date(sale.created_at) < new Date(filters.fromDate)) {
         return false;
       }
@@ -104,9 +109,48 @@ function filterSales(filters = {}) {
         return false;
       }
 
+      if (
+        filters.variantName &&
+        !String(sale.variant_name || "")
+          .toLowerCase()
+          .includes(String(filters.variantName).toLowerCase())
+      ) {
+        return false;
+      }
+
       return true;
     })
     .sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
+}
+
+function upsertStore(store) {
+  mutateState((state) => {
+    const index = state.stores.findIndex((item) => String(item.store_id) === String(store.store_id));
+    const nextStore = {
+      ...store,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (index === -1) {
+      state.stores.push({
+        ...nextStore,
+        created_at: nextStore.created_at || new Date().toISOString(),
+      });
+    } else {
+      state.stores[index] = {
+        ...state.stores[index],
+        ...nextStore,
+      };
+    }
+  });
+}
+
+function listStores() {
+  return readState().stores.slice().sort((a, b) => String(a.store_id).localeCompare(String(b.store_id)));
+}
+
+function getStoreById(storeId) {
+  return readState().stores.find((store) => String(store.store_id) === String(storeId)) || null;
 }
 
 function createReport(report) {
@@ -126,4 +170,7 @@ module.exports = {
   filterSales,
   createReport,
   getReportBySlug,
+  upsertStore,
+  listStores,
+  getStoreById,
 };
