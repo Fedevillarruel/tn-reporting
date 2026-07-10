@@ -75,6 +75,7 @@ label {
   display: grid;
   gap: 0.35rem;
   font-size: 0.95rem;
+  min-width: 0;
 }
 
 input {
@@ -84,6 +85,8 @@ input {
   height: 40px;
   padding: 0 0.75rem;
   font-family: "IBM Plex Mono", monospace;
+  width: 100%;
+  min-width: 0;
 }
 
 select {
@@ -91,8 +94,25 @@ select {
   background: #fff;
   border-radius: 10px;
   height: 40px;
-  padding: 0 0.75rem;
+  padding: 0 2.2rem 0 0.75rem;
   font-family: "IBM Plex Mono", monospace;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #5f5a52 50%),
+    linear-gradient(135deg, #5f5a52 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 16px,
+    calc(100% - 11px) 16px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+select::-ms-expand {
+  display: none;
 }
 
 button,
