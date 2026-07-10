@@ -79,16 +79,19 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/oauth/callback", (req, res) => {
   return (async () => {
   const code = String(req.query.code || "");
-  const storeId = String(req.query.store_id || req.query.storeId || "");
+  const storeIdFromQuery = String(
+    req.query.store_id || req.query.storeId || req.query.user_id || req.query.shop_id || ""
+  );
   const appId = process.env.TN_APP_ID;
   const clientSecret = process.env.TN_CLIENT_SECRET;
   const appUrl = process.env.TN_APP_URL || `${req.protocol}://${req.get("host")}`;
 
-  if (!code || !storeId) {
+  if (!code) {
     return res.status(400).json({
       ok: false,
       error: "Faltan parametros OAuth",
-      expected: ["code", "store_id"],
+      expected: ["code"],
+      receivedQueryKeys: Object.keys(req.query || {}),
     });
   }
 
@@ -107,6 +110,10 @@ app.get("/api/oauth/callback", (req, res) => {
       clientSecret,
     });
 
+    const resolvedStoreId = String(
+      storeIdFromQuery || tokenResponse.user_id || tokenResponse.store_id || ""
+    );
+
     if (!tokenResponse.access_token) {
       return res.status(502).json({
         ok: false,
@@ -115,12 +122,20 @@ app.get("/api/oauth/callback", (req, res) => {
       });
     }
 
-    setSetting(`tn_store_${storeId}_access_token`, String(tokenResponse.access_token));
-    setSetting("tn_active_store_id", String(storeId));
-    setSetting("tn_store_id", String(storeId));
+    if (!resolvedStoreId) {
+      return res.status(502).json({
+        ok: false,
+        error: "Tiendanube no devolvio identificador de tienda",
+        detail: tokenResponse,
+      });
+    }
+
+    setSetting(`tn_store_${resolvedStoreId}_access_token`, String(tokenResponse.access_token));
+    setSetting("tn_active_store_id", String(resolvedStoreId));
+    setSetting("tn_store_id", String(resolvedStoreId));
     setSetting("tn_access_token", String(tokenResponse.access_token));
 
-    const installedUrl = `${appUrl}/?installed=1&store_id=${encodeURIComponent(storeId)}`;
+    const installedUrl = `${appUrl}/?installed=1&store_id=${encodeURIComponent(resolvedStoreId)}`;
     return res.status(200).send(`
       <!doctype html>
       <html lang="es">
@@ -135,7 +150,7 @@ app.get("/api/oauth/callback", (req, res) => {
         </head>
         <body>
           <h1>App conectada con Tiendanube</h1>
-          <p>Tienda vinculada: <strong>${storeId}</strong></p>
+          <p>Tienda vinculada: <strong>${resolvedStoreId}</strong></p>
           <p>Ya puedes volver al panel para sincronizar ventas y generar reportes.</p>
           <p><a href="${installedUrl}">Ir al panel</a></p>
         </body>
