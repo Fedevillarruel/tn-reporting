@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reporte Compartido</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <p class="chip">Shared Report</p>
+        <h1 id="title">Reporte protegido</h1>
+      </header>
+
+      <section class="card">
+        <form id="accessForm" class="stack">
+          <label>
+            Clave del reporte
+            <input id="password" required placeholder="Ingresa la clave" />
+          </label>
+          <button type="submit">Ver reporte</button>
+        </form>
+        <p id="status" class="status"></p>
+      </section>
+
+      <section class="card" id="reportBox" hidden>
+        <div class="kpi-grid">
+          <article>
+            <p>Pedidos</p>
+            <strong id="orders">0</strong>
+          </article>
+          <article>
+            <p>Items</p>
+            <strong id="items">0</strong>
+          </article>
+          <article>
+            <p>Facturacion</p>
+            <strong id="revenue">$0.00</strong>
+          </article>
+        </div>
+
+        <h2>Top productos</h2>
+        <ul id="products" class="product-list"></ul>
+
+        <a id="pdfBtn" class="btn-link" target="_blank" rel="noreferrer">Abrir PDF</a>
+      </section>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const slug = params.get("slug");
+      const accessForm = document.getElementById("accessForm");
+      const statusEl = document.getElementById("status");
+      const reportBox = document.getElementById("reportBox");
+      let liveStream;
+
+      function render(summary) {
+        document.getElementById("orders").textContent = summary.orders;
+        document.getElementById("items").textContent = summary.items;
+        document.getElementById("revenue").textContent = `$${Number(summary.revenue).toFixed(2)}`;
+
+        const list = document.getElementById("products");
+        list.innerHTML = "";
+        for (const p of summary.byProduct.slice(0, 20)) {
+          const li = document.createElement("li");
+          li.textContent = `${p.product_name} | ${p.quantity}u | $${Number(p.revenue).toFixed(2)}`;
+          list.appendChild(li);
+        }
+      }
+
+      accessForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (!slug) {
+          statusEl.textContent = "Falta slug del reporte en la URL";
+          return;
+        }
+
+        const password = document.getElementById("password").value;
+        const response = await fetch(`/api/reports/${slug}?password=${encodeURIComponent(password)}`);
+
+        if (!response.ok) {
+          statusEl.textContent = "Clave incorrecta o reporte invalido";
+          return;
+        }
+
+        const data = await response.json();
+        document.getElementById("title").textContent = data.report.name;
+        render(data.summary);
+        reportBox.hidden = false;
+
+        const pdfBtn = document.getElementById("pdfBtn");
+        pdfBtn.href = `/api/reports/${slug}/pdf?password=${encodeURIComponent(password)}`;
+
+        if (liveStream) {
+          liveStream.close();
+        }
+
+        liveStream = new EventSource(
+          `/api/reports/${slug}/stream?password=${encodeURIComponent(password)}`
+        );
+
+        liveStream.addEventListener("reportUpdate", (event) => {
+          const payload = JSON.parse(event.data);
+          render(payload.summary);
+          statusEl.textContent = "Actualizado en vivo";
+        });
+
+        liveStream.onerror = () => {
+          statusEl.textContent = "No se pudo mantener la conexion en vivo";
+        };
+      });
+    </script>
+  </body>
+</html>

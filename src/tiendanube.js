@@ -1,0 +1,65 @@
+const axios = require("axios");
+
+const API_BASE = "https://api.tiendanube.com/v1";
+
+function normalizeOrderLine(order, line) {
+  const quantity = Number(line.quantity || 0);
+  const price = Number(line.price || 0);
+
+  return {
+    order_id: Number(order.id),
+    order_number: order.number ? String(order.number) : String(order.id),
+    created_at: order.created_at,
+    customer_name: order.customer?.name || "Cliente no identificado",
+    product_id: Number(line.product_id || 0),
+    product_name: line.name || "Producto sin nombre",
+    variant_name: line.variant_name || "Sin variante",
+    quantity,
+    price,
+    total: Number((quantity * price).toFixed(2)),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function fetchOrders({ storeId, accessToken, page = 1, perPage = 100 }) {
+  const url = `${API_BASE}/${storeId}/orders`;
+  const response = await axios.get(url, {
+    params: { page, per_page: perPage },
+    headers: {
+      Authentication: `bearer ${accessToken}`,
+      "User-Agent": "reporting-tn-app (contact: local)",
+      "Content-Type": "application/json",
+    },
+    timeout: 20000,
+  });
+
+  return response.data || [];
+}
+
+async function fetchAllOrderLines({ storeId, accessToken, maxPages = 20 }) {
+  const lines = [];
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const orders = await fetchOrders({ storeId, accessToken, page });
+
+    if (!orders.length) {
+      break;
+    }
+
+    for (const order of orders) {
+      for (const line of order.products || []) {
+        lines.push(normalizeOrderLine(order, line));
+      }
+    }
+
+    if (orders.length < 100) {
+      break;
+    }
+  }
+
+  return lines;
+}
+
+module.exports = {
+  fetchAllOrderLines,
+};

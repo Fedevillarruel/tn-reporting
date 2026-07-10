@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reporting TN</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <p class="chip">Tiendanube Live Reporting</p>
+        <h1>Vincula rapido, filtra ventas y comparte reportes PDF en vivo</h1>
+      </header>
+
+      <section class="card two-col">
+        <div>
+          <h2>1) Conexion Tiendanube</h2>
+          <p class="muted">Guarda credenciales para sincronizar ventas.</p>
+          <form id="connection-form" class="stack">
+            <label>
+              Store ID
+              <input id="storeId" name="storeId" required placeholder="123456" />
+            </label>
+            <label>
+              Access Token
+              <input id="accessToken" name="accessToken" required placeholder="xxxxxxxx" />
+            </label>
+            <button type="submit">Guardar conexion</button>
+          </form>
+        </div>
+
+        <div>
+          <h2>2) Sincronizacion</h2>
+          <p class="muted">Trae ventas desde Tiendanube y actualiza indicadores.</p>
+          <button id="syncBtn" class="cta">Sincronizar ventas ahora</button>
+          <p id="syncStatus" class="status"></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3) Filtros y vista</h2>
+        <form id="filters-form" class="grid-3">
+          <label>
+            Desde
+            <input type="datetime-local" id="fromDate" />
+          </label>
+          <label>
+            Hasta
+            <input type="datetime-local" id="toDate" />
+          </label>
+          <label>
+            Producto
+            <input id="productName" placeholder="ej: Remera" />
+          </label>
+        </form>
+        <div class="row-actions">
+          <button id="applyFilters">Aplicar filtros</button>
+        </div>
+
+        <div class="kpi-grid">
+          <article>
+            <p>Pedidos</p>
+            <strong id="kpiOrders">0</strong>
+          </article>
+          <article>
+            <p>Items</p>
+            <strong id="kpiItems">0</strong>
+          </article>
+          <article>
+            <p>Facturacion</p>
+            <strong id="kpiRevenue">$0.00</strong>
+          </article>
+        </div>
+
+        <div class="table-wrap">
+          <table id="salesTable">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Pedido</th>
+                <th>Cliente</th>
+                <th>Producto</th>
+                <th>Cantidad</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card two-col">
+        <div>
+          <h2>4) Crear link compartible</h2>
+          <form id="share-form" class="stack">
+            <label>
+              Nombre del reporte
+              <input id="reportName" required placeholder="Reporte Julio" />
+            </label>
+            <label>
+              Clave del reporte
+              <input id="reportPassword" required placeholder="clave-segura" />
+            </label>
+            <button type="submit">Crear link + PDF</button>
+          </form>
+        </div>
+
+        <div>
+          <h2>Resultado</h2>
+          <p class="muted">Comparte el link y la clave. El reporte se actualiza en vivo.</p>
+          <p id="shareLink" class="status"></p>
+          <p id="pdfLink" class="status"></p>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
