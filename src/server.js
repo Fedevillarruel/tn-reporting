@@ -245,6 +245,49 @@ app.get("/api/oauth/callback", (req, res) => {
   })();
 });
 
+app.get("/api/oauth/install-url", (req, res) => {
+  const rawDomain = String(req.query.storeDomain || "").trim().toLowerCase();
+  const appId = process.env.TN_APP_ID;
+
+  if (!appId) {
+    return res.status(500).json({
+      ok: false,
+      error: "Falta TN_APP_ID en variables de entorno",
+    });
+  }
+
+  if (!rawDomain) {
+    return res.status(400).json({
+      ok: false,
+      error: "storeDomain es obligatorio",
+    });
+  }
+
+  const normalized = rawDomain
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "")
+    .replace(/\.mitiendanube\.com$/, "");
+
+  if (!/^[a-z0-9-]+$/i.test(normalized)) {
+    return res.status(400).json({
+      ok: false,
+      error: "storeDomain invalido",
+      example: "fediniappdemo",
+    });
+  }
+
+  const state = `reporting-${Date.now()}`;
+  const authorizeUrl = `https://${normalized}.mitiendanube.com/admin/apps/${encodeURIComponent(
+    appId
+  )}/authorize?state=${encodeURIComponent(state)}`;
+
+  return res.json({
+    ok: true,
+    storeDomain: normalized,
+    authorizeUrl,
+  });
+});
+
 app.post("/api/privacy/store-redact", (_req, res) => {
   return res.status(202).json({ ok: true });
 });

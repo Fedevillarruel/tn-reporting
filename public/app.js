@@ -5,6 +5,7 @@ const applyFiltersBtn = $("#applyFilters");
 const shareForm = $("#share-form");
 const storeSelect = $("#storeSelect");
 const saveSystemPasswordBtn = $("#saveSystemPassword");
+const openStoreLinkBtn = $("#openStoreLink");
 
 let currentFilters = {
   fromDate: "",
@@ -233,6 +234,27 @@ storeSelect.addEventListener("change", async () => {
 });
 
 saveSystemPasswordBtn.addEventListener("click", saveSystemPassword);
+
+openStoreLinkBtn.addEventListener("click", async () => {
+  const storeDomain = $("#linkStoreDomain").value.trim();
+  if (!storeDomain) {
+    setStatus("Escribe el dominio corto de la tienda para vincular");
+    return;
+  }
+
+  const response = await fetch(
+    `/api/oauth/install-url?storeDomain=${encodeURIComponent(storeDomain)}`
+  );
+  const data = await response.json();
+
+  if (!response.ok) {
+    setStatus(data.error || "No se pudo generar el link de vinculacion");
+    return;
+  }
+
+  window.open(data.authorizeUrl, "_blank", "noopener,noreferrer");
+  setStatus("Se abrio el link de vinculacion en una nueva pestana");
+});
 
 shareForm.addEventListener("submit", async (e) => {
   e.preventDefault();
