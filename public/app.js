@@ -26,8 +26,8 @@ function setStatus(text) {
 
 function getFilters() {
   return {
-    fromDate: $("#fromDate").value ? new Date($("#fromDate").value).toISOString() : "",
-    toDate: $("#toDate").value ? new Date($("#toDate").value).toISOString() : "",
+    fromDate: $("#fromDate").value || "",
+    toDate: $("#toDate").value || "",
     productName: $("#productName").value.trim(),
     variantName: $("#variantName").value.trim(),
   };
@@ -57,9 +57,8 @@ function renderRows(rows) {
   }
 }
 
-function renderProductDropdown(catalog) {
+function renderProductDropdown(catalog, selectedProduct = "", selectedVariant = "") {
   const productSelect = $("#productName");
-  const variantSelect = $("#variantName");
 
   catalogCache = catalog || [];
   productSelect.innerHTML = '<option value="">Todos</option>';
@@ -70,27 +69,41 @@ function renderProductDropdown(catalog) {
     productSelect.appendChild(option);
   }
 
-  variantSelect.innerHTML = '<option value="">Todas</option>';
+  if (selectedProduct) {
+    productSelect.value = selectedProduct;
+  }
+
+  renderVariantDropdown(selectedProduct, selectedVariant);
 }
 
-function renderVariantDropdown(selectedProduct) {
+function renderVariantDropdown(selectedProduct, selectedVariant = "") {
   const variantSelect = $("#variantName");
   variantSelect.innerHTML = '<option value="">Todas</option>';
 
+  let variants = [];
+
   if (!selectedProduct) {
-    return;
+    const all = new Set();
+    for (const product of catalogCache) {
+      for (const variant of product.variants || []) {
+        all.add(variant);
+      }
+    }
+    variants = Array.from(all.values()).sort((a, b) => a.localeCompare(b));
+  } else {
+    const product = catalogCache.find((item) => item.productName === selectedProduct);
+    variants = product ? (product.variants || []).slice().sort((a, b) => a.localeCompare(b)) : [];
   }
 
-  const product = catalogCache.find((item) => item.productName === selectedProduct);
-  if (!product) {
-    return;
-  }
-
-  for (const variant of product.variants || []) {
+  for (const variant of variants) {
     const option = document.createElement("option");
     option.value = variant;
     option.textContent = variant;
     variantSelect.appendChild(option);
+  }
+
+  if (selectedVariant) {
+    variantSelect.value = selectedVariant;
   }
 }
 
@@ -212,12 +225,11 @@ async function loadSales() {
 
   renderSummary(data.summary);
   renderRows(data.rows);
-  renderProductDropdown(data.catalog || []);
-  if (data.filters?.productName) {
-    $("#productName").value = data.filters.productName;
-    renderVariantDropdown(data.filters.productName);
-    $("#variantName").value = data.filters.variantName || "";
-  }
+  renderProductDropdown(
+    data.catalog || [],
+    data.filters?.productName || currentFilters.productName || "",
+    data.filters?.variantName || currentFilters.variantName || ""
+  );
 
   if (data.systemPassword && !$("#reportPassword").value) {
     $("#reportPassword").value = data.systemPassword;
@@ -232,7 +244,7 @@ applyFiltersBtn.addEventListener("click", async () => {
 });
 
 $("#productName").addEventListener("change", () => {
-  renderVariantDropdown($("#productName").value);
+  renderVariantDropdown($("#productName").value, "");
 });
 
 storeSelect.addEventListener("change", async () => {

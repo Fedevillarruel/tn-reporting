@@ -83,8 +83,28 @@ function upsertSales(lines) {
   });
 }
 
+function parseFilterDate(value, { endOfMinute = false } = {}) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  if (endOfMinute && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    return new Date(parsed.getTime() + 59999);
+  }
+
+  return parsed;
+}
+
 function filterSales(filters = {}) {
   const state = readState();
+  const fromDate = parseFilterDate(filters.fromDate);
+  const toDate = parseFilterDate(filters.toDate, { endOfMinute: true });
 
   return state.sales
     .filter((sale) => {
@@ -92,11 +112,13 @@ function filterSales(filters = {}) {
         return false;
       }
 
-      if (filters.fromDate && new Date(sale.created_at) < new Date(filters.fromDate)) {
+      const saleDate = new Date(sale.created_at);
+
+      if (fromDate && saleDate < fromDate) {
         return false;
       }
 
-      if (filters.toDate && new Date(sale.created_at) > new Date(filters.toDate)) {
+      if (toDate && saleDate > toDate) {
         return false;
       }
 
