@@ -1,68 +1,129 @@
 const path = require("path");
 const fs = require("fs");
-const Database = require("better-sqlite3");
 
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-const dbPath = process.env.DB_PATH || (isServerless ? "/tmp/reporting.db" : path.join(process.cwd(), "data", "reporting.db"));
-const dbDir = path.dirname(dbPath);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+const dataPath =
+  process.env.DB_PATH ||
+  (isServerless ? "/tmp/reporting.json" : path.join(process.cwd(), "data", "reporting.json"));
+const dataDir = path.dirname(dataPath);
+
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
 }
-const db = new Database(dbPath);
 
-db.pragma("journal_mode = WAL");
+function defaultState() {
+  return {
+    settings: {},
+    sales: [],
+    reports: [],
+  };
+}
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS app_settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
+function readState() {
+  if (!fs.existsSync(dataPath)) {
+    return defaultState();
+  }
 
-  CREATE TABLE IF NOT EXISTS sales (
-    id INTEGER PRIMARY KEY,
-    order_id INTEGER NOT NULL,
-    order_number TEXT,
-    created_at TEXT NOT NULL,
-    customer_name TEXT,
-    product_id INTEGER,
-    product_name TEXT,
-    variant_name TEXT,
-    quantity INTEGER NOT NULL,
-    price REAL NOT NULL,
-    total REAL NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE(order_id, product_id, variant_name)
-  );
+  try {
+    const raw = fs.readFileSync(dataPath, "utf8");
+    if (!raw.trim()) {
+      return defaultState();
+    }
 
-  CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    slug TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    password TEXT NOT NULL,
-    filters_json TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
+    return {
+      ...defaultState(),
+      ...JSON.parse(raw),
+    };
+  } catch {
+    return defaultState();
+  }
+}
 
-  CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
-  CREATE INDEX IF NOT EXISTS idx_sales_product_name ON sales(product_name);
-`);
+function writeState(state) {
+  fs.writeFileSync(dataPath, JSON.stringify(state, null, 2));
+}
 
-function setSetting(key, value) {
-  const stmt = db.prepare(`
-    INSERT INTO app_settings(key, value)
-    VALUES(?, ?)
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value
-  `);
-  stmt.run(key, value);
+function mutateState(mutator) {
+  const state = readState();
+  const result = mutator(state);
+  writeState(state);
+  return result;
 }
 
 function getSetting(key) {
-  return db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key)?.value;
+  return readState().settings[key];
+}
+
+function setSetting(key, value) {
+  mutateState((state) => {
+    state.settings[key] = value;
+  });
+}
+
+function upsertSales(lines) {
+  mutateState((state) => {
+    const index = new Map(
+      state.sales.map((item, itemIndex) => [
+        `${item.order_id}:${item.product_id}:${item.variant_name}`,
+        itemIndex,
+      ])
+    );
+
+    for (const line of lines) {
+      const key = `${line.order_id}:${line.product_id}:${line.variant_name}`;
+      const existingIndex = index.get(key);
+      if (existingIndex === undefined) {
+        state.sales.push(line);
+        index.set(key, state.sales.length - 1);
+      } else {
+        state.sales[existingIndex] = line;
+      }
+    }
+  });
+}
+
+function filterSales(filters = {}) {
+  const state = readState();
+
+  return state.sales
+    .filter((sale) => {
+      if (filters.fromDate && new Date(sale.created_at) < new Date(filters.fromDate)) {
+        return false;
+      }
+
+      if (filters.toDate && new Date(sale.created_at) > new Date(filters.toDate)) {
+        return false;
+      }
+
+      if (
+        filters.productName &&
+        !String(sale.product_name || "")
+          .toLowerCase()
+          .includes(String(filters.productName).toLowerCase())
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
+}
+
+function createReport(report) {
+  mutateState((state) => {
+    state.reports.push(report);
+  });
+}
+
+function getReportBySlug(slug) {
+  return readState().reports.find((report) => report.slug === slug) || null;
 }
 
 module.exports = {
-  db,
-  setSetting,
   getSetting,
+  setSetting,
+  upsertSales,
+  filterSales,
+  createReport,
+  getReportBySlug,
 };

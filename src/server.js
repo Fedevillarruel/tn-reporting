@@ -5,7 +5,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const PDFDocument = require("pdfkit");
 
-const { db, getSetting, setSetting } = require("./db");
+const { getSetting, setSetting, upsertSales } = require("./db");
 const { fetchAllOrderLines } = require("./tiendanube");
 const {
   listSales,
@@ -42,52 +42,6 @@ function getConnectionConfig() {
   };
 }
 
-function upsertSales(lines) {
-  const stmt = db.prepare(`
-    INSERT INTO sales(
-      order_id,
-      order_number,
-      created_at,
-      customer_name,
-      product_id,
-      product_name,
-      variant_name,
-      quantity,
-      price,
-      total,
-      updated_at
-    ) VALUES (
-      @order_id,
-      @order_number,
-      @created_at,
-      @customer_name,
-      @product_id,
-      @product_name,
-      @variant_name,
-      @quantity,
-      @price,
-      @total,
-      @updated_at
-    )
-    ON CONFLICT(order_id, product_id, variant_name)
-    DO UPDATE SET
-      order_number=excluded.order_number,
-      created_at=excluded.created_at,
-      customer_name=excluded.customer_name,
-      quantity=excluded.quantity,
-      price=excluded.price,
-      total=excluded.total,
-      updated_at=excluded.updated_at
-  `);
-
-  const trx = db.transaction((items) => {
-    for (const item of items) {
-      stmt.run(item);
-    }
-  });
-
-  trx(lines);
-}
 
 function publishLiveReport(slug) {
   const clients = liveClients.get(slug);
