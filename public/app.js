@@ -11,6 +11,11 @@ const storeSummary = $("#storeSummary");
 const activeStoreTitle = $("#activeStoreTitle");
 const changeAccountBtn = $("#changeAccount");
 const savedReportsBox = $("#savedReports");
+const passwordModal = $("#passwordModal");
+const modalPasswordInput = $("#modalPasswordInput");
+const modalPasswordError = $("#modalPasswordError");
+const modalPasswordCancel = $("#modalPasswordCancel");
+const modalPasswordConfirm = $("#modalPasswordConfirm");
 
 let currentFilters = {
   fromDate: "",
@@ -251,6 +256,69 @@ async function loadSavedReports() {
   }
 }
 
+function askSystemPasswordModal() {
+  if (!passwordModal || !modalPasswordInput || !modalPasswordConfirm || !modalPasswordCancel) {
+    return Promise.resolve(window.prompt("Define una clave para este sistema:", "") || "");
+  }
+
+  return new Promise((resolve) => {
+    passwordModal.hidden = false;
+    modalPasswordInput.value = "";
+    modalPasswordError.hidden = true;
+    modalPasswordInput.focus();
+
+    const cleanup = () => {
+      passwordModal.hidden = true;
+      modalPasswordConfirm.removeEventListener("click", onConfirm);
+      modalPasswordCancel.removeEventListener("click", onCancel);
+      modalPasswordInput.removeEventListener("keydown", onKeydown);
+      passwordModal.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onEscape);
+    };
+
+    const onConfirm = () => {
+      const value = String(modalPasswordInput.value || "").trim();
+      if (!value) {
+        modalPasswordError.hidden = false;
+        return;
+      }
+
+      cleanup();
+      resolve(value);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve("");
+    };
+
+    const onBackdrop = (event) => {
+      if (event.target === passwordModal) {
+        onCancel();
+      }
+    };
+
+    const onKeydown = (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        onConfirm();
+      }
+    };
+
+    const onEscape = (event) => {
+      if (event.key === "Escape") {
+        onCancel();
+      }
+    };
+
+    modalPasswordConfirm.addEventListener("click", onConfirm);
+    modalPasswordCancel.addEventListener("click", onCancel);
+    modalPasswordInput.addEventListener("keydown", onKeydown);
+    passwordModal.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onEscape);
+  });
+}
+
 async function loadStores() {
   const response = await fetch("/api/stores");
   if (!response.ok) {
@@ -482,10 +550,7 @@ async function bootstrap() {
   await loadStores();
 
   if (installed && installedStoreId) {
-    const suggestedPassword = window.prompt(
-      "Tienda vinculada. Define ahora una clave para este sistema de reporting:",
-      ""
-    );
+    const suggestedPassword = await askSystemPasswordModal();
     if (suggestedPassword && suggestedPassword.trim()) {
       const response = await fetch(`/api/stores/${encodeURIComponent(installedStoreId)}/password`, {
         method: "POST",

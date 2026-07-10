@@ -146,6 +146,25 @@
       </section>
     </main>
 
+    <div id="passwordModal" class="modal-backdrop" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+        <div class="modal-head">
+          <p class="chip">Configuracion inicial</p>
+          <h3 id="passwordModalTitle">Define la clave del sistema</h3>
+          <p class="muted">Esta clave protege el acceso de reporting para la tienda vinculada.</p>
+        </div>
+        <label>
+          Clave del sistema
+          <input id="modalPasswordInput" type="password" placeholder="Ej: clave-segura" />
+        </label>
+        <p id="modalPasswordError" class="status" hidden>Ingresa una clave valida para continuar.</p>
+        <div class="modal-actions">
+          <button id="modalPasswordCancel" type="button">Cancelar</button>
+          <button id="modalPasswordConfirm" class="cta" type="button">Guardar clave</button>
+        </div>
+      </div>
+    </div>
+
     <script src="/app.js"></script>
   </body>
 </html>
