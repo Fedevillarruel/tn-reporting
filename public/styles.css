@@ -135,6 +135,13 @@ button:hover,
   gap: 1rem;
 }
 
+.summary-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1rem;
+}
+
 .store-row {
   display: grid;
   gap: 0.7rem;
@@ -261,6 +268,7 @@ th {
 
   .store-row,
   .store-link-row,
+  .summary-row,
   .share-box {
     grid-template-columns: 1fr;
   }

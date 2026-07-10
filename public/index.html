@@ -20,7 +20,7 @@
       </header>
 
       <section class="card top-bar">
-        <div>
+        <div id="storeManager">
           <h2>Tienda activa</h2>
           <p class="muted">La sincronizacion corre en automatico. Cambia la tienda desde este selector.</p>
           <div class="store-row">
@@ -42,6 +42,14 @@
             <button id="openStoreLink" type="button">Abrir link de vinculacion</button>
           </div>
           <p id="syncStatus" class="status">Esperando datos...</p>
+        </div>
+
+        <div id="storeSummary" class="summary-row" hidden>
+          <div>
+            <h2 id="activeStoreTitle">Tienda vinculada</h2>
+            <p class="muted">La sincronizacion corre en automatico en tiempo real.</p>
+          </div>
+          <button id="changeAccount" type="button">Cambiar cuenta</button>
         </div>
       </section>
 

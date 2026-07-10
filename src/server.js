@@ -42,15 +42,41 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(process.cwd(), "public")));
 
-function getConnectionConfig() {
+function parseCookies(req) {
+  const header = String(req?.headers?.cookie || "");
+  const cookies = {};
+  if (!header) {
+    return cookies;
+  }
+
+  for (const chunk of header.split(";")) {
+    const [rawKey, ...rest] = chunk.trim().split("=");
+    if (!rawKey) continue;
+    cookies[rawKey] = decodeURIComponent(rest.join("=") || "");
+  }
+  return cookies;
+}
+
+function setAuthCookies(res, storeId, accessToken) {
+  const common = "Path=/; Max-Age=2592000; SameSite=Lax; Secure; HttpOnly";
+  res.append("Set-Cookie", `tn_store_id=${encodeURIComponent(String(storeId))}; ${common}`);
+  res.append("Set-Cookie", `tn_access_token=${encodeURIComponent(String(accessToken))}; ${common}`);
+}
+
+function getConnectionConfig(req) {
+  const cookies = parseCookies(req);
   const envStoreId = process.env.TN_STORE_ID;
   const envToken = process.env.TN_ACCESS_TOKEN;
-  const activeStoreId = getSetting("tn_active_store_id") || getSetting("tn_store_id") || envStoreId;
+  const activeStoreId =
+    getSetting("tn_active_store_id") ||
+    getSetting("tn_store_id") ||
+    cookies.tn_store_id ||
+    envStoreId;
   const storedToken = activeStoreId ? getSetting(`tn_store_${activeStoreId}_access_token`) : "";
 
   return {
     storeId: activeStoreId,
-    accessToken: storedToken || getSetting("tn_access_token") || envToken,
+    accessToken: storedToken || getSetting("tn_access_token") || cookies.tn_access_token || envToken,
   };
 }
 
@@ -206,6 +232,7 @@ app.get("/api/oauth/callback", (req, res) => {
       setSetting("tn_active_store_id", String(resolvedStoreId));
       setSetting("tn_store_id", String(resolvedStoreId));
       setSetting("tn_access_token", String(tokenResponse.access_token));
+      setAuthCookies(res, resolvedStoreId, tokenResponse.access_token);
 
       upsertStore({
         store_id: String(resolvedStoreId),
@@ -300,28 +327,57 @@ app.post("/api/privacy/customers-data-request", (_req, res) => {
   return res.status(202).json({ ok: true });
 });
 
-app.get("/api/stores", (_req, res) => {
-  const stores = listStores().map((store) => storePublicInfo(store.store_id));
-  const activeStoreId = String(getSetting("tn_active_store_id") || "");
+app.get("/api/stores", (req, res) => {
+  const cookies = parseCookies(req);
+  const cookieStoreId = String(cookies.tn_store_id || "");
+  const activeStoreId = String(getSetting("tn_active_store_id") || cookieStoreId || "");
+  const stores = listStores()
+    .map((store) => storePublicInfo(store.store_id))
+    .filter(Boolean)
+    .map((store) => ({
+      ...store,
+      active: String(store.store_id) === activeStoreId,
+    }));
+
+  if (cookieStoreId && !stores.some((store) => String(store.store_id) === cookieStoreId)) {
+    stores.push({
+      store_id: cookieStoreId,
+      name: `Tienda ${cookieStoreId}`,
+      linked_at: null,
+      created_at: null,
+      updated_at: null,
+      lastSyncAt: null,
+      hasSystemPassword: false,
+      active: String(activeStoreId) === cookieStoreId,
+    });
+  }
 
   return res.json({ stores, activeStoreId });
 });
 
 app.post("/api/stores/active", (req, res) => {
   const storeId = String(req.body?.storeId || "");
-  if (!storeId || !getStoreById(storeId)) {
+  const cookies = parseCookies(req);
+  const exists = Boolean(getStoreById(storeId) || String(cookies.tn_store_id || "") === storeId);
+  if (!storeId || !exists) {
     return res.status(404).json({ ok: false, error: "Tienda no encontrada" });
   }
 
   setSetting("tn_active_store_id", storeId);
+  const token = getSetting(`tn_store_${storeId}_access_token`) || getSetting("tn_access_token") || cookies.tn_access_token || "";
+  if (token) {
+    setAuthCookies(res, storeId, token);
+  }
   return res.json({ ok: true, storeId });
 });
 
 app.post("/api/stores/:storeId/password", (req, res) => {
   const storeId = String(req.params.storeId || "");
   const password = String(req.body?.password || "").trim();
+  const cookies = parseCookies(req);
 
-  if (!storeId || !getStoreById(storeId)) {
+  const exists = Boolean(getStoreById(storeId) || String(cookies.tn_store_id || "") === storeId);
+  if (!storeId || !exists) {
     return res.status(404).json({ ok: false, error: "Tienda no encontrada" });
   }
 
@@ -333,8 +389,8 @@ app.post("/api/stores/:storeId/password", (req, res) => {
   return res.json({ ok: true });
 });
 
-app.get("/api/connection", (_req, res) => {
-  const { storeId, accessToken } = getConnectionConfig();
+app.get("/api/connection", (req, res) => {
+  const { storeId, accessToken } = getConnectionConfig(req);
   res.json({
     connected: Boolean(storeId && accessToken),
     storeId: storeId || "",
@@ -354,6 +410,7 @@ app.post("/api/connection", (req, res) => {
   setSetting("tn_access_token", String(accessToken));
   setSetting(`tn_store_${resolvedStoreId}_access_token`, String(accessToken));
   setSetting("tn_active_store_id", resolvedStoreId);
+  setAuthCookies(res, resolvedStoreId, accessToken);
   upsertStore({
     store_id: resolvedStoreId,
     name: `Tienda ${resolvedStoreId}`,
@@ -364,9 +421,9 @@ app.post("/api/connection", (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post("/api/tiendanube/sync", async (_req, res) => {
+app.post("/api/tiendanube/sync", async (req, res) => {
   try {
-    const { storeId, accessToken } = getConnectionConfig();
+    const { storeId, accessToken } = getConnectionConfig(req);
 
     if (!storeId || !accessToken) {
       return res.status(400).json({ error: "No hay tienda activa vinculada" });
@@ -384,7 +441,7 @@ app.post("/api/tiendanube/sync", async (_req, res) => {
 
 app.get("/api/sales", (req, res) => {
   return (async () => {
-    const { storeId, accessToken } = getConnectionConfig();
+    const { storeId, accessToken } = getConnectionConfig(req);
     if (!storeId || !accessToken) {
       return res.status(400).json({ ok: false, error: "No hay tienda activa vinculada" });
     }
@@ -410,7 +467,7 @@ app.get("/api/sales", (req, res) => {
 
 app.post("/api/reports", (req, res) => {
   return (async () => {
-    const { storeId, accessToken } = getConnectionConfig();
+    const { storeId, accessToken } = getConnectionConfig(req);
     if (!storeId || !accessToken) {
       return res.status(400).json({ error: "No hay tienda activa vinculada" });
     }

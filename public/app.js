@@ -6,6 +6,10 @@ const shareForm = $("#share-form");
 const storeSelect = $("#storeSelect");
 const saveSystemPasswordBtn = $("#saveSystemPassword");
 const openStoreLinkBtn = $("#openStoreLink");
+const storeManager = $("#storeManager");
+const storeSummary = $("#storeSummary");
+const activeStoreTitle = $("#activeStoreTitle");
+const changeAccountBtn = $("#changeAccount");
 
 let currentFilters = {
   fromDate: "",
@@ -115,6 +119,7 @@ async function loadStores() {
 
   const data = await response.json();
   const stores = data.stores || [];
+  const activeStoreId = String(data.activeStoreId || "");
 
   storeSelect.innerHTML = "";
   if (!stores.length) {
@@ -122,6 +127,8 @@ async function loadStores() {
     option.value = "";
     option.textContent = "Sin tiendas vinculadas";
     storeSelect.appendChild(option);
+    storeManager.hidden = false;
+    storeSummary.hidden = true;
     setStatus("Vincula una tienda para comenzar");
     return;
   }
@@ -135,6 +142,16 @@ async function loadStores() {
     }
     storeSelect.appendChild(option);
   }
+
+  const activeStore = stores.find((store) => String(store.store_id) === activeStoreId) || stores[0];
+  if (activeStore) {
+    activeStoreTitle.textContent = `Tienda vinculada: ${activeStore.name} (${activeStore.store_id})`;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const forceManager = params.get("manage") === "1";
+  storeManager.hidden = !forceManager;
+  storeSummary.hidden = forceManager;
 
   setStatus("Sincronizacion automatica activa");
 }
@@ -233,6 +250,11 @@ storeSelect.addEventListener("change", async () => {
   }
 });
 
+changeAccountBtn.addEventListener("click", () => {
+  storeSummary.hidden = true;
+  storeManager.hidden = false;
+});
+
 saveSystemPasswordBtn.addEventListener("click", saveSystemPassword);
 
 openStoreLinkBtn.addEventListener("click", async () => {
@@ -306,7 +328,32 @@ $("#sharePdfLink").addEventListener("click", async () => {
 });
 
 async function bootstrap() {
+  const params = new URLSearchParams(window.location.search);
+  const installedStoreId = params.get("store_id");
+  const installed = params.get("installed") === "1";
+
   await loadStores();
+
+  if (installed && installedStoreId) {
+    const suggestedPassword = window.prompt(
+      "Tienda vinculada. Define ahora una clave para este sistema de reporting:",
+      ""
+    );
+    if (suggestedPassword && suggestedPassword.trim()) {
+      const response = await fetch(`/api/stores/${encodeURIComponent(installedStoreId)}/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: suggestedPassword.trim() }),
+      });
+
+      if (response.ok) {
+        $("#systemPassword").value = suggestedPassword.trim();
+        $("#reportPassword").value = suggestedPassword.trim();
+        setStatus("Tienda vinculada y clave guardada");
+      }
+    }
+  }
+
   await loadSales();
   window.setInterval(loadSales, 20000);
 }
