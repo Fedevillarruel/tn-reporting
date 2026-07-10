@@ -19,7 +19,9 @@ const {
   listCatalog,
   summarizeSales,
   createShareReport,
+  createShareToken,
   authenticateReport,
+  authenticateReportToken,
   getReportBySlug,
 } = require("./reportService");
 
@@ -480,21 +482,56 @@ app.post("/api/reports", (req, res) => {
       return res.status(400).json({ error: "name y password son obligatorios" });
     }
 
+    const reportFilters = {
+      ...(filters || {}),
+      storeId,
+    };
     const slug = createShareReport({
       name,
       password,
-      filters: {
-        ...(filters || {}),
-        storeId,
-      },
+      filters: reportFilters,
+    });
+    const token = createShareToken({
+      name,
+      password,
+      filters: reportFilters,
     });
     const baseUrl = `${req.protocol}://${req.get("host")}`;
 
     return res.json({
       ok: true,
       slug,
-      shareUrl: `${baseUrl}/share.html?slug=${slug}`,
-      pdfUrl: `${baseUrl}/api/reports/${slug}/pdf`,
+      token,
+      shareUrl: `${baseUrl}/share.html?token=${encodeURIComponent(token)}`,
+      pdfUrl: `${baseUrl}/api/reports/token/${encodeURIComponent(token)}/pdf`,
+      legacyShareUrl: `${baseUrl}/share.html?slug=${slug}`,
+    });
+  })();
+});
+
+app.get("/api/reports/token/:token", (req, res) => {
+  return (async () => {
+    const token = String(req.params.token || "");
+    const { password } = req.query;
+
+    const report = authenticateReportToken(token, String(password || ""));
+    if (!report) {
+      return res.status(401).json({ error: "Reporte no encontrado o clave incorrecta" });
+    }
+
+    const storeAccessToken = getSetting(`tn_store_${report.filters.storeId}_access_token`) || "";
+    if (report.filters.storeId && storeAccessToken) {
+      await syncStoreSales({ storeId: report.filters.storeId, accessToken: storeAccessToken, force: false });
+    }
+
+    return res.json({
+      report: {
+        slug: report.slug,
+        name: report.name,
+        filters: report.filters,
+        updatedAt: report.updated_at,
+      },
+      summary: summarizeSales(report.filters),
     });
   })();
 });
@@ -561,6 +598,153 @@ app.get("/api/reports/:slug/pdf", (req, res) => {
     doc.rect(0, 0, pageW, pageH).fill("#F3EFE7");
 
     // Header block.
+    doc.rect(0, 0, pageW, 118).fill("#14324A");
+    doc.rect(0, 110, pageW, 8).fill("#D17A22");
+    doc.fillColor("#F8F3E8").fontSize(11).font("Helvetica-Bold").text("REPORTE DE VENTAS", x, 26);
+    doc.fillColor("#FFFFFF").fontSize(24).font("Helvetica-Bold").text(String(report.name || "Reporte"), x, 42, {
+      width: contentW,
+      ellipsis: true,
+    });
+    doc
+      .fillColor("#D5DEE6")
+      .fontSize(10)
+      .font("Helvetica")
+      .text(`Tienda: ${report.filters.storeId || "N/A"}`, x, 88)
+      .text(`Generado: ${metaDate}`, x + 210, 88);
+
+    doc.y = 140;
+    doc.fillColor("#1A1A1A").font("Helvetica-Bold").fontSize(15).text("Resumen");
+
+    const cardsY = doc.y + 10;
+    const gap = 10;
+    const cardW = (contentW - gap * 2) / 3;
+    const cardH = 74;
+    const cards = [
+      { label: "Pedidos", value: String(summary.orders), tone: "#E7F0F8" },
+      { label: "Items", value: String(summary.items), tone: "#F1EADC" },
+      { label: "Facturacion", value: formatMoney(summary.revenue), tone: "#EAE8F5" },
+    ];
+
+    cards.forEach((card, index) => {
+      const cardX = x + (cardW + gap) * index;
+      doc.roundedRect(cardX, cardsY, cardW, cardH, 10).fillAndStroke(card.tone, "#C9C1B3");
+      doc.fillColor("#5B5248").font("Helvetica").fontSize(10).text(card.label, cardX + 12, cardsY + 12);
+      doc.fillColor("#1D1D1D").font("Helvetica-Bold").fontSize(22).text(card.value, cardX + 12, cardsY + 30, {
+        width: cardW - 24,
+        ellipsis: true,
+      });
+    });
+
+    let tableY = cardsY + cardH + 26;
+    doc.fillColor("#1A1A1A").font("Helvetica-Bold").fontSize(15).text("Top productos", x, tableY);
+    tableY += 24;
+
+    const colProduct = 320;
+    const colQty = 70;
+    const colRevenue = contentW - colProduct - colQty;
+
+    function drawTableHeader(y) {
+      doc.rect(x, y, contentW, 24).fill("#EFE7D7");
+      doc
+        .fillColor("#3D372F")
+        .font("Helvetica-Bold")
+        .fontSize(10)
+        .text("Producto", x + 10, y + 8, { width: colProduct - 14 })
+        .text("Unidades", x + colProduct + 2, y + 8, { width: colQty - 8, align: "right" })
+        .text("Facturacion", x + colProduct + colQty + 2, y + 8, { width: colRevenue - 12, align: "right" });
+      return y + 24;
+    }
+
+    tableY = drawTableHeader(tableY);
+
+    const rows = summary.byProduct.slice(0, 20);
+    if (!rows.length) {
+      doc
+        .fillColor("#5B5248")
+        .font("Helvetica")
+        .fontSize(11)
+        .text("No hay datos para los filtros actuales.", x, tableY + 10);
+    }
+
+    rows.forEach((item, index) => {
+      const product = String(item.product_name || "-");
+      const qty = String(item.quantity || 0);
+      const revenue = formatMoney(item.revenue);
+      const textH = doc.heightOfString(product, {
+        width: colProduct - 16,
+        align: "left",
+      });
+      const rowH = Math.max(24, textH + 10);
+
+      if (tableY + rowH > pageH - 54) {
+        doc.addPage();
+        doc.rect(0, 0, pageW, pageH).fill("#F3EFE7");
+        tableY = 42;
+        tableY = drawTableHeader(tableY);
+      }
+
+      if (index % 2 === 0) {
+        doc.rect(x, tableY, contentW, rowH).fill("#FBF8F1");
+      }
+
+      doc
+        .fillColor("#222")
+        .font("Helvetica")
+        .fontSize(10)
+        .text(product, x + 10, tableY + 5, { width: colProduct - 16, lineGap: 1 })
+        .text(qty, x + colProduct + 2, tableY + 8, { width: colQty - 8, align: "right" })
+        .text(revenue, x + colProduct + colQty + 2, tableY + 8, { width: colRevenue - 12, align: "right" });
+
+      doc.moveTo(x, tableY + rowH).lineTo(x + contentW, tableY + rowH).stroke("#D6CEBF");
+      tableY += rowH;
+    });
+
+    doc
+      .fillColor("#7A7165")
+      .font("Helvetica")
+      .fontSize(9)
+      .text("Reporte generado automaticamente por TN Reporting", x, pageH - 26, {
+        width: contentW,
+        align: "right",
+      });
+
+    doc.end();
+  })();
+});
+
+app.get("/api/reports/token/:token/pdf", (req, res) => {
+  return (async () => {
+    const token = String(req.params.token || "");
+    const { password } = req.query;
+    const report = authenticateReportToken(token, String(password || ""));
+
+    if (!report) {
+      return res.status(401).json({ error: "Clave incorrecta" });
+    }
+
+    const storeAccessToken = getSetting(`tn_store_${report.filters.storeId}_access_token`) || "";
+    if (report.filters.storeId && storeAccessToken) {
+      await syncStoreSales({ storeId: report.filters.storeId, accessToken: storeAccessToken, force: false });
+    }
+
+    const summary = summarizeSales(report.filters);
+
+    const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
+    const metaDate = new Date().toLocaleString("es-AR");
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=report-${report.slug}.pdf`);
+
+    const doc = new PDFDocument({ margin: 42, size: "A4" });
+    doc.pipe(res);
+
+    const pageW = doc.page.width;
+    const pageH = doc.page.height;
+    const x = 42;
+    const contentW = pageW - x * 2;
+
+    doc.rect(0, 0, pageW, pageH).fill("#F3EFE7");
+
     doc.rect(0, 0, pageW, 118).fill("#14324A");
     doc.rect(0, 110, pageW, 8).fill("#D17A22");
     doc.fillColor("#F8F3E8").fontSize(11).font("Helvetica-Bold").text("REPORTE DE VENTAS", x, 26);

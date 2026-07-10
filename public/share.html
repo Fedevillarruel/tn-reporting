@@ -56,11 +56,32 @@
     <script>
       const params = new URLSearchParams(window.location.search);
       const slug = params.get("slug");
+      const token = params.get("token");
       const accessForm = document.getElementById("accessForm");
       const statusEl = document.getElementById("status");
       const reportBox = document.getElementById("reportBox");
       let pollTimer;
       let currentPassword = "";
+
+      function reportApiPath() {
+        if (token) {
+          return `/api/reports/token/${encodeURIComponent(token)}`;
+        }
+        if (slug) {
+          return `/api/reports/${encodeURIComponent(slug)}`;
+        }
+        return "";
+      }
+
+      function reportPdfPath() {
+        if (token) {
+          return `/api/reports/token/${encodeURIComponent(token)}/pdf`;
+        }
+        if (slug) {
+          return `/api/reports/${encodeURIComponent(slug)}/pdf`;
+        }
+        return "";
+      }
 
       function render(summary) {
         document.getElementById("orders").textContent = summary.orders;
@@ -77,11 +98,12 @@
       }
 
       async function refreshReport() {
-        if (!slug || !currentPassword) {
+        const basePath = reportApiPath();
+        if (!basePath || !currentPassword) {
           return;
         }
 
-        const response = await fetch(`/api/reports/${slug}?password=${encodeURIComponent(currentPassword)}`);
+        const response = await fetch(`${basePath}?password=${encodeURIComponent(currentPassword)}`);
         if (!response.ok) {
           statusEl.textContent = "No se pudo actualizar el reporte";
           return;
@@ -95,13 +117,14 @@
 
       accessForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        if (!slug) {
-          statusEl.textContent = "Falta slug del reporte en la URL";
+        const basePath = reportApiPath();
+        if (!basePath) {
+          statusEl.textContent = "Falta token o slug del reporte en la URL";
           return;
         }
 
         currentPassword = document.getElementById("password").value;
-        const response = await fetch(`/api/reports/${slug}?password=${encodeURIComponent(currentPassword)}`);
+        const response = await fetch(`${basePath}?password=${encodeURIComponent(currentPassword)}`);
 
         if (!response.ok) {
           statusEl.textContent = "Clave incorrecta o reporte invalido";
@@ -114,7 +137,7 @@
         reportBox.hidden = false;
 
         const pdfBtn = document.getElementById("pdfBtn");
-        pdfBtn.href = `/api/reports/${slug}/pdf?password=${encodeURIComponent(currentPassword)}`;
+        pdfBtn.href = `${reportPdfPath()}?password=${encodeURIComponent(currentPassword)}`;
 
         if (pollTimer) {
           window.clearInterval(pollTimer);

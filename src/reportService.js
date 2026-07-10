@@ -91,6 +91,51 @@ function createShareReport({ name, password, filters }) {
   return slug;
 }
 
+function getShareSecret() {
+  return (
+    process.env.TN_SHARE_TOKEN_SECRET ||
+    process.env.TN_CLIENT_SECRET ||
+    process.env.TN_APP_ID ||
+    "tn-reporting-dev-secret"
+  );
+}
+
+function passwordHash(password) {
+  return crypto.createHash("sha256").update(String(password || "")).digest("hex");
+}
+
+function createShareToken({ name, password, filters }) {
+  const payload = {
+    v: 1,
+    n: String(name || "Reporte"),
+    f: filters || {},
+    ph: passwordHash(password),
+    iat: Date.now(),
+  };
+
+  const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto.createHmac("sha256", getShareSecret()).update(payloadB64).digest("base64url");
+  return `${payloadB64}.${signature}`;
+}
+
+function parseShareToken(token) {
+  const [payloadB64, signature] = String(token || "").split(".");
+  if (!payloadB64 || !signature) {
+    return null;
+  }
+
+  const expected = crypto.createHmac("sha256", getShareSecret()).update(payloadB64).digest("base64url");
+  if (signature !== expected) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
 
 function authenticateReport(slug, password) {
   const report = getReportBySlug(slug);
@@ -102,11 +147,31 @@ function authenticateReport(slug, password) {
   return report;
 }
 
+function authenticateReportToken(token, password) {
+  const payload = parseShareToken(token);
+  if (!payload) {
+    return null;
+  }
+
+  if (String(payload.ph || "") !== passwordHash(password)) {
+    return null;
+  }
+
+  return {
+    slug: `token-${String(token).slice(0, 10)}`,
+    name: String(payload.n || "Reporte"),
+    filters: payload.f || {},
+    updated_at: new Date().toISOString(),
+  };
+}
+
 module.exports = {
   listSales,
   listCatalog,
   summarizeSales,
   createShareReport,
+  createShareToken,
   getReportBySlug,
   authenticateReport,
+  authenticateReportToken,
 };
