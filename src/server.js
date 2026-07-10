@@ -609,7 +609,11 @@ app.get("/api/reports/:slug/pdf", (req, res) => {
 
     const summary = summarizeSales(report.filters);
 
-    const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
+    const moneyFormatter = new Intl.NumberFormat("es-AR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const formatMoney = (value) => `$${moneyFormatter.format(Number(value || 0))}`;
     const metaDate = new Date().toLocaleString("es-AR");
 
     res.setHeader("Content-Type", "application/pdf");
@@ -757,7 +761,11 @@ app.get("/api/reports/token/:token/pdf", (req, res) => {
 
     const summary = summarizeSales(report.filters);
 
-    const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
+    const moneyFormatter = new Intl.NumberFormat("es-AR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const formatMoney = (value) => `$${moneyFormatter.format(Number(value || 0))}`;
     const metaDate = new Date().toLocaleString("es-AR");
 
     res.setHeader("Content-Type", "application/pdf");

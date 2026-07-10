@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=JetBrains+Mono:wght@500&family=Manrope:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Roboto+Mono:wght@500&family=Sora:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/styles.css" />
@@ -62,6 +62,14 @@
       const reportBox = document.getElementById("reportBox");
       let pollTimer;
       let currentPassword = "";
+      const currencyFormatter = new Intl.NumberFormat("es-AR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+      function formatMoney(value) {
+        return `$${currencyFormatter.format(Number(value || 0))}`;
+      }
 
       function reportApiPath() {
         if (token) {
@@ -86,13 +94,13 @@
       function render(summary) {
         document.getElementById("orders").textContent = summary.orders;
         document.getElementById("items").textContent = summary.items;
-        document.getElementById("revenue").textContent = `$${Number(summary.revenue).toFixed(2)}`;
+        document.getElementById("revenue").textContent = formatMoney(summary.revenue);
 
         const list = document.getElementById("products");
         list.innerHTML = "";
         for (const p of summary.byProduct.slice(0, 20)) {
           const li = document.createElement("li");
-          li.textContent = `${p.product_name} | ${p.quantity}u | $${Number(p.revenue).toFixed(2)}`;
+          li.textContent = `${p.product_name} | ${p.quantity}u | ${formatMoney(p.revenue)}`;
           list.appendChild(li);
         }
       }

@@ -25,6 +25,14 @@ let currentFilters = {
 };
 
 let catalogCache = [];
+const currencyFormatter = new Intl.NumberFormat("es-AR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatMoney(value) {
+  return `$${currencyFormatter.format(Number(value || 0))}`;
+}
 
 function setStatus(text) {
   syncStatus.textContent = text;
@@ -42,7 +50,7 @@ function getFilters() {
 function renderSummary(summary) {
   $("#kpiOrders").textContent = summary.orders;
   $("#kpiItems").textContent = summary.items;
-  $("#kpiRevenue").textContent = `$${Number(summary.revenue).toFixed(2)}`;
+  $("#kpiRevenue").textContent = formatMoney(summary.revenue);
 }
 
 function renderRows(rows) {
@@ -57,7 +65,7 @@ function renderRows(rows) {
       <td>${row.customer_name}</td>
       <td>${row.product_name} / ${row.variant_name || "Sin variante"}</td>
       <td>${row.quantity}</td>
-      <td>$${Number(row.total).toFixed(2)}</td>
+      <td>${formatMoney(row.total)}</td>
     `;
     tbody.appendChild(tr);
   }

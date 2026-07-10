@@ -1,14 +1,14 @@
 :root {
-  --bg: #f6efe3;
-  --ink: #18222c;
-  --card: #fff9ef;
-  --accent: #0d4d68;
-  --accent-soft: #d28b2f;
-  --line: #cbb89a;
-  --line-strong: #b39b78;
-  --font-ui: "Manrope", sans-serif;
-  --font-display: "Fraunces", serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --bg: #f3efe8;
+  --ink: #1f2a2f;
+  --card: #fffdf9;
+  --accent: #18566a;
+  --accent-soft: #b6762d;
+  --line: #d2c6b4;
+  --line-strong: #b4a38a;
+  --font-ui: "Sora", sans-serif;
+  --font-display: "DM Serif Display", serif;
+  --font-mono: "Roboto Mono", monospace;
 }
 
 * {
@@ -20,9 +20,9 @@ body {
   font-family: var(--font-ui);
   color: var(--ink);
   background:
-    radial-gradient(circle at 83% 5%, rgba(222, 166, 86, 0.42) 0, transparent 38%),
-    radial-gradient(circle at 8% 16%, rgba(71, 132, 168, 0.42) 0, transparent 35%),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 58%),
+    radial-gradient(circle at 82% 3%, rgba(198, 148, 78, 0.26) 0, transparent 36%),
+    radial-gradient(circle at 9% 14%, rgba(76, 138, 160, 0.24) 0, transparent 34%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0) 58%),
     var(--bg);
   background-repeat: no-repeat, no-repeat, no-repeat;
   background-size: 125vw 125vh, 120vw 120vh, auto;
@@ -146,7 +146,7 @@ button,
   border: none;
   border-radius: 14px;
   padding: 0.68rem 1.02rem;
-  background: linear-gradient(135deg, #0d4d68, #126180);
+  background: linear-gradient(135deg, #18566a, #226b82);
   color: #fff;
   font-weight: 700;
   cursor: pointer;
@@ -163,7 +163,7 @@ button:hover,
 }
 
 .cta {
-  background: linear-gradient(135deg, #c27125, #d9902d);
+  background: linear-gradient(135deg, #ab6a24, #c07e2d);
 }
 
 .grid-3 {
