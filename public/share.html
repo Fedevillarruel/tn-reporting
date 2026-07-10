@@ -59,7 +59,8 @@
       const accessForm = document.getElementById("accessForm");
       const statusEl = document.getElementById("status");
       const reportBox = document.getElementById("reportBox");
-      let liveStream;
+      let pollTimer;
+      let currentPassword = "";
 
       function render(summary) {
         document.getElementById("orders").textContent = summary.orders;
@@ -75,6 +76,23 @@
         }
       }
 
+      async function refreshReport() {
+        if (!slug || !currentPassword) {
+          return;
+        }
+
+        const response = await fetch(`/api/reports/${slug}?password=${encodeURIComponent(currentPassword)}`);
+        if (!response.ok) {
+          statusEl.textContent = "No se pudo actualizar el reporte";
+          return;
+        }
+
+        const data = await response.json();
+        document.getElementById("title").textContent = data.report.name;
+        render(data.summary);
+        statusEl.textContent = "Actualizado";
+      }
+
       accessForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         if (!slug) {
@@ -82,8 +100,8 @@
           return;
         }
 
-        const password = document.getElementById("password").value;
-        const response = await fetch(`/api/reports/${slug}?password=${encodeURIComponent(password)}`);
+        currentPassword = document.getElementById("password").value;
+        const response = await fetch(`/api/reports/${slug}?password=${encodeURIComponent(currentPassword)}`);
 
         if (!response.ok) {
           statusEl.textContent = "Clave incorrecta o reporte invalido";
@@ -96,25 +114,14 @@
         reportBox.hidden = false;
 
         const pdfBtn = document.getElementById("pdfBtn");
-        pdfBtn.href = `/api/reports/${slug}/pdf?password=${encodeURIComponent(password)}`;
+        pdfBtn.href = `/api/reports/${slug}/pdf?password=${encodeURIComponent(currentPassword)}`;
 
-        if (liveStream) {
-          liveStream.close();
+        if (pollTimer) {
+          window.clearInterval(pollTimer);
         }
 
-        liveStream = new EventSource(
-          `/api/reports/${slug}/stream?password=${encodeURIComponent(password)}`
-        );
-
-        liveStream.addEventListener("reportUpdate", (event) => {
-          const payload = JSON.parse(event.data);
-          render(payload.summary);
-          statusEl.textContent = "Actualizado en vivo";
-        });
-
-        liveStream.onerror = () => {
-          statusEl.textContent = "No se pudo mantener la conexion en vivo";
-        };
+        statusEl.textContent = "Reporte cargado. Actualizando cada 15 segundos";
+        pollTimer = window.setInterval(refreshReport, 15000);
       });
     </script>
   </body>

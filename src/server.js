@@ -19,6 +19,7 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 const liveClients = new Map();
 
@@ -308,12 +309,18 @@ app.get("/api/reports/:slug/stream", (req, res) => {
   return undefined;
 });
 
-setInterval(() => {
-  for (const slug of liveClients.keys()) {
-    publishLiveReport(slug);
-  }
-}, 15000);
+if (!isServerless) {
+  setInterval(() => {
+    for (const slug of liveClients.keys()) {
+      publishLiveReport(slug);
+    }
+  }, 15000);
+}
 
-app.listen(PORT, () => {
-  console.log(`reporting-tn running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`reporting-tn running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

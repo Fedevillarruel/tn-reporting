@@ -61,3 +61,13 @@ http://localhost:3000
 
 Este MVP usa un `accessToken` ya emitido para simplificar la vinculacion rapida.
 Si quieres publicarlo como app del ecosistema Tiendanube, el siguiente paso es implementar OAuth completo (autorizacion, callback y refresh donde aplique).
+
+## Deploy en Vercel
+
+- Se agrega `api/index.js` como entrypoint serverless.
+- En Vercel, SQLite se mueve a `/tmp/reporting.db` para evitar el error por filesystem de solo lectura.
+- El reporte compartido usa refresco cada 15 segundos para ser compatible con serverless.
+
+Limitacion importante:
+
+- En Vercel, SQLite en `/tmp` es efimera. Sirve para demo o pruebas, pero para persistencia real debes mover ventas, credenciales y reportes a una base externa como Supabase o Vercel Postgres.

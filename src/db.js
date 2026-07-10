@@ -2,7 +2,8 @@ const path = require("path");
 const fs = require("fs");
 const Database = require("better-sqlite3");
 
-const dbPath = path.join(process.cwd(), "data", "reporting.db");
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const dbPath = process.env.DB_PATH || (isServerless ? "/tmp/reporting.db" : path.join(process.cwd(), "data", "reporting.db"));
 const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
