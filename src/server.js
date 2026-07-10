@@ -24,7 +24,7 @@ const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTI
 const liveClients = new Map();
 
 const dataDir = path.join(process.cwd(), "data");
-if (!fs.existsSync(dataDir)) {
+if (!isServerless && !fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
@@ -72,6 +72,38 @@ function publishLiveReport(slug) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, ts: new Date().toISOString() });
+});
+
+app.get("/api/oauth/callback", (req, res) => {
+  const code = String(req.query.code || "");
+  const storeId = String(req.query.store_id || req.query.storeId || "");
+
+  // This endpoint intentionally responds with a controlled status until full OAuth exchange is implemented.
+  if (!code || !storeId) {
+    return res.status(400).json({
+      ok: false,
+      error: "Faltan parametros OAuth",
+      expected: ["code", "store_id"],
+    });
+  }
+
+  return res.status(501).json({
+    ok: false,
+    error: "OAuth exchange pendiente de implementacion",
+    received: { storeId },
+  });
+});
+
+app.post("/api/privacy/store-redact", (_req, res) => {
+  return res.status(202).json({ ok: true });
+});
+
+app.post("/api/privacy/customers-redact", (_req, res) => {
+  return res.status(202).json({ ok: true });
+});
+
+app.post("/api/privacy/customers-data-request", (_req, res) => {
+  return res.status(202).json({ ok: true });
 });
 
 app.get("/api/connection", (_req, res) => {
