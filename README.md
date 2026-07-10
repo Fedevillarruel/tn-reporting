@@ -51,6 +51,7 @@ http://localhost:3000
 
 - `POST /api/connection` guarda credenciales
 - `POST /api/tiendanube/sync` sincroniza ventas
+- `GET /api/oauth/callback` completa OAuth desde Tiendanube Partners
 - `GET /api/sales` lista ventas filtradas
 - `POST /api/reports` crea link protegido
 - `GET /api/reports/:slug?password=...` obtiene resumen
@@ -59,15 +60,22 @@ http://localhost:3000
 
 ## Nota sobre autenticacion Tiendanube
 
-Este MVP usa un `accessToken` ya emitido para simplificar la vinculacion rapida.
-Si quieres publicarlo como app del ecosistema Tiendanube, el siguiente paso es implementar OAuth completo (autorizacion, callback y refresh donde aplique).
+La app soporta callback OAuth via `GET /api/oauth/callback` para guardar el token de la tienda instalada.
+
+Variables necesarias para Partners:
+
+- `TN_APP_ID`
+- `TN_CLIENT_SECRET`
+- `TN_APP_URL` (ejemplo `https://tn-reporting.vercel.app`)
+
+Cuando Tiendanube redirige con `code` y `store_id`, el backend intercambia el token y deja activa esa tienda para sincronizacion.
 
 ## Deploy en Vercel
 
 - Se agrega `api/index.js` como entrypoint serverless.
-- En Vercel, SQLite se mueve a `/tmp/reporting.db` para evitar el error por filesystem de solo lectura.
+- En Vercel, el storage JSON usa `/tmp/reporting.json` para evitar el error por filesystem de solo lectura.
 - El reporte compartido usa refresco cada 15 segundos para ser compatible con serverless.
 
 Limitacion importante:
 
-- En Vercel, SQLite en `/tmp` es efimera. Sirve para demo o pruebas, pero para persistencia real debes mover ventas, credenciales y reportes a una base externa como Supabase o Vercel Postgres.
+- En Vercel, el storage en `/tmp` es efimero. Sirve para demo o pruebas, pero para persistencia real debes mover ventas, credenciales y reportes a una base externa como Supabase o Vercel Postgres.

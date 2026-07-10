@@ -1,6 +1,7 @@
 const axios = require("axios");
 
 const API_BASE = "https://api.tiendanube.com/v1";
+const OAUTH_TOKEN_URL = process.env.TN_OAUTH_TOKEN_URL || "https://www.tiendanube.com/apps/authorize/token";
 
 function normalizeOrderLine(order, line) {
   const quantity = Number(line.quantity || 0);
@@ -60,6 +61,27 @@ async function fetchAllOrderLines({ storeId, accessToken, maxPages = 20 }) {
   return lines;
 }
 
+async function exchangeOAuthCode({ code, clientId, clientSecret }) {
+  const response = await axios.post(
+    OAUTH_TOKEN_URL,
+    {
+      client_id: String(clientId),
+      client_secret: String(clientSecret),
+      grant_type: "authorization_code",
+      code: String(code),
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    }
+  );
+
+  return response.data || {};
+}
+
 module.exports = {
   fetchAllOrderLines,
+  exchangeOAuthCode,
 };

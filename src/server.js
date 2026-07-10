@@ -6,7 +6,7 @@ const dotenv = require("dotenv");
 const PDFDocument = require("pdfkit");
 
 const { getSetting, setSetting, upsertSales } = require("./db");
-const { fetchAllOrderLines } = require("./tiendanube");
+const { fetchAllOrderLines, exchangeOAuthCode } = require("./tiendanube");
 const {
   listSales,
   summarizeSales,
@@ -35,10 +35,12 @@ app.use(express.static(path.join(process.cwd(), "public")));
 function getConnectionConfig() {
   const envStoreId = process.env.TN_STORE_ID;
   const envToken = process.env.TN_ACCESS_TOKEN;
+  const activeStoreId = getSetting("tn_active_store_id") || getSetting("tn_store_id") || envStoreId;
+  const storedToken = activeStoreId ? getSetting(`tn_store_${activeStoreId}_access_token`) : "";
 
   return {
-    storeId: getSetting("tn_store_id") || envStoreId,
-    accessToken: getSetting("tn_access_token") || envToken,
+    storeId: activeStoreId,
+    accessToken: storedToken || getSetting("tn_access_token") || envToken,
   };
 }
 
@@ -75,10 +77,13 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/oauth/callback", (req, res) => {
+  return (async () => {
   const code = String(req.query.code || "");
   const storeId = String(req.query.store_id || req.query.storeId || "");
+  const appId = process.env.TN_APP_ID;
+  const clientSecret = process.env.TN_CLIENT_SECRET;
+  const appUrl = process.env.TN_APP_URL || `${req.protocol}://${req.get("host")}`;
 
-  // This endpoint intentionally responds with a controlled status until full OAuth exchange is implemented.
   if (!code || !storeId) {
     return res.status(400).json({
       ok: false,
@@ -87,11 +92,63 @@ app.get("/api/oauth/callback", (req, res) => {
     });
   }
 
-  return res.status(501).json({
-    ok: false,
-    error: "OAuth exchange pendiente de implementacion",
-    received: { storeId },
-  });
+  if (!appId || !clientSecret) {
+    return res.status(500).json({
+      ok: false,
+      error: "Falta configuracion OAuth en variables de entorno",
+      required: ["TN_APP_ID", "TN_CLIENT_SECRET"],
+    });
+  }
+
+  try {
+    const tokenResponse = await exchangeOAuthCode({
+      code,
+      clientId: appId,
+      clientSecret,
+    });
+
+    if (!tokenResponse.access_token) {
+      return res.status(502).json({
+        ok: false,
+        error: "Tiendanube no devolvio access_token",
+        detail: tokenResponse,
+      });
+    }
+
+    setSetting(`tn_store_${storeId}_access_token`, String(tokenResponse.access_token));
+    setSetting("tn_active_store_id", String(storeId));
+    setSetting("tn_store_id", String(storeId));
+    setSetting("tn_access_token", String(tokenResponse.access_token));
+
+    const installedUrl = `${appUrl}/?installed=1&store_id=${encodeURIComponent(storeId)}`;
+    return res.status(200).send(`
+      <!doctype html>
+      <html lang="es">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>Instalacion completa</title>
+          <style>
+            body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+            a { color: #0b6a73; }
+          </style>
+        </head>
+        <body>
+          <h1>App conectada con Tiendanube</h1>
+          <p>Tienda vinculada: <strong>${storeId}</strong></p>
+          <p>Ya puedes volver al panel para sincronizar ventas y generar reportes.</p>
+          <p><a href="${installedUrl}">Ir al panel</a></p>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    return res.status(502).json({
+      ok: false,
+      error: "No se pudo completar OAuth con Tiendanube",
+      detail: error.response?.data || error.message,
+    });
+  }
+  })();
 });
 
 app.post("/api/privacy/store-redact", (_req, res) => {
