@@ -283,6 +283,10 @@ th {
   backdrop-filter: blur(4px);
 }
 
+.modal-backdrop[hidden] {
+  display: none;
+}
+
 .modal-card {
   width: min(520px, 100%);
   border: 1px solid rgba(255, 255, 255, 0.3);
